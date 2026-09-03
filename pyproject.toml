@@ -1,0 +1,98 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "aynthor-compression"
+version = "1.0.0"
+description = "Desktop front end for the ROM compression tools emulators expect"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+authors = [{ name = "Ahmet Salih Golen" }]
+keywords = ["rom", "compression", "chd", "rvz", "nsz", "zcci", "emulation", "es-de"]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Environment :: Win32 (MS Windows)",
+    "Intended Audience :: End Users/Desktop",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: Microsoft :: Windows",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Games/Entertainment",
+    "Topic :: System :: Archiving :: Compression",
+]
+dependencies = [
+    "PySide6>=6.6.0",
+    "nsz>=5.0.0",
+    "zstandard>=0.21.0",
+]
+
+[project.optional-dependencies]
+build = ["pyinstaller>=6.0"]
+dev = [
+    "pytest>=8.0",
+    "pytest-cov>=5.0",
+    "ruff>=0.6",
+    "mypy>=1.10",
+]
+
+[project.urls]
+Homepage = "https://github.com/asa07-salihg/Ayn-Thor-Compression"
+Issues = "https://github.com/asa07-salihg/Ayn-Thor-Compression/issues"
+Changelog = "https://github.com/asa07-salihg/Ayn-Thor-Compression/blob/main/CHANGELOG.md"
+
+[project.scripts]
+aynthor = "aynthor.__main__:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+aynthor = ["ui/assets/*"]
+
+# ---------------------------------------------------------------------------
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = [
+    "E", "W",   # pycodestyle
+    "F",        # pyflakes
+    "I",        # import order
+    "UP",       # pyupgrade
+    "B",        # bugbear
+    "SIM",      # simplify
+    "BLE",      # blind except
+    "RUF",
+]
+# BLE001 is selected rather than ignored: catching everything is sometimes
+# right here (the window must survive a converter that raises something
+# unexpected) but it should have to be justified in place, with a noqa and a
+# comment, not allowed everywhere by default.
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S101"]
+
+[tool.mypy]
+python_version = "3.10"
+files = ["src/aynthor"]
+ignore_missing_imports = true
+# The Qt layer is checked loosely: PySide6's stubs disagree with themselves on
+# enum and signal types often enough that stricter settings produce noise, not
+# bugs. core/ is where the logic lives and it is checked properly.
+warn_unused_ignores = true
+
+[[tool.mypy.overrides]]
+module = "aynthor.ui.*"
+disallow_untyped_defs = false

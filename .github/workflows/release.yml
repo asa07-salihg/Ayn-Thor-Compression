@@ -1,0 +1,46 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - run: pip install . pyinstaller
+
+      # Every tool is verified against the SHA-256 in
+      # src/aynthor/core/tools/manifest.py before it is written to disk, so a
+      # release exe can never be built around a tool that changed upstream.
+      - name: Fetch and verify converter tools
+        run: python scripts/fetch_tools.py
+
+      # This also writes dist/SHA256SUMS.txt. The updater refuses a release
+      # that has no checksum file and verifies the download against it, so the
+      # same step has to produce both.
+      - name: Build
+        run: python packaging/build_exe.py
+
+      - name: Show what will be published
+        shell: pwsh
+        run: Get-Content dist/SHA256SUMS.txt
+
+      - uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          files: |
+            dist/AynThorCompression.exe
+            dist/SHA256SUMS.txt
+          generate_release_notes: true

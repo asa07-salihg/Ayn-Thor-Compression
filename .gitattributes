@@ -1,0 +1,20 @@
+* text=auto eol=lf
+
+*.py   text eol=lf
+*.md   text eol=lf
+*.toml text eol=lf
+*.yml  text eol=lf
+*.spec text eol=lf
+*.bat  text eol=crlf
+*.ps1  text eol=crlf
+
+# Never diff or normalise these.
+*.ico binary
+*.png binary
+*.bin binary
+*.exe binary
+*.dll binary
+
+# Keep GitHub's language statistics about the application, not the prose.
+docs/**    linguist-documentation
+examples/** linguist-documentation

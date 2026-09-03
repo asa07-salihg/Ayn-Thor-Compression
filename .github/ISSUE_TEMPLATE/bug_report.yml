@@ -1,0 +1,55 @@
+name: Bug report
+description: Something converted wrongly, failed, or crashed.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please do not attach ROMs, keys or game data. Filenames and log text are enough.
+
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Help > About, or the release you downloaded.
+      placeholder: "1.0.0"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: format
+    attributes:
+      label: Format
+      options: [CHD, RVZ, CSO, ZCCI, NSZ, "7z / ZIP", WUA, "Decrypt 3DS", "NDS trim", Other]
+    validations:
+      required: true
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you did, what you expected, what you got instead.
+    validations:
+      required: true
+
+  - type: textarea
+    id: log
+    attributes:
+      label: Log output
+      description: >
+        The Log pane at the bottom of the window. The tool's own error text is
+        usually the line that matters.
+      render: text
+
+  - type: input
+    id: source-file
+    attributes:
+      label: Source file
+      description: Extension and rough size. Not the file itself.
+      placeholder: ".iso, about 4.3 GB, dumped from disc"
+
+  - type: input
+    id: windows
+    attributes:
+      label: Windows version
+      placeholder: "Windows 11 24H2"

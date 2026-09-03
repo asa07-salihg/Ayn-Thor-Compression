@@ -1,0 +1,42 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Virtual environments: machine-specific absolute paths make them unusable
+# anywhere else. Recreate with `python -m venv .venv && pip install -e .`
+.venv/
+venv/
+env/
+
+# Console keys. Never commit these: they are copyrighted, and publishing them
+# is a takedown risk for the whole repository. See SECURITY.md.
+prod.keys
+keys.txt
+*.keys
+
+# External converter binaries. They are downloaded on first run and verified
+# against the checksums in src/aynthor/core/tools/manifest.py.
+tools/*
+!tools/.gitkeep
+
+# Local git bundles (history backups), never project content
+*.bundle
+
+# Editors
+.idea/
+.vscode/
+*.swp
+
+# OS
+Thumbs.db
+Desktop.ini
+.DS_Store

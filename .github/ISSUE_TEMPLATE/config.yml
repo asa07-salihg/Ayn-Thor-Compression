@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: A converter tool is broken
+    url: https://github.com/asa07-salihg/Ayn-Thor-Compression/blob/main/THIRD-PARTY-NOTICES.md
+    about: >
+      This app drives chdman, DolphinTool, maxcso, nsz and rom-converto but does
+      not implement them. If a tool fails at its own job, THIRD-PARTY-NOTICES.md
+      links to the project that owns it.

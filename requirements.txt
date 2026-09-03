@@ -1,0 +1,5 @@
+# Runtime dependencies. Development and build extras live in pyproject.toml
+# (`pip install -e ".[dev]"` / `".[build]"`).
+PySide6>=6.6.0
+nsz>=5.0.0
+zstandard>=0.21.0

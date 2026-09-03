@@ -1,0 +1,60 @@
+Ayn Thor - what to convert, and to what
+=======================================
+
+Each line names a game, the ES-DE folder it lives in, and the format to
+convert it to. Both shapes below are read; use whichever you prefer. Lines that
+are neither are ignored, so headings and notes can sit between the entries.
+
+Folder names follow the ES-DE layout:
+https://github.com/retrogamecorps/ES-DE-Directories
+
+Format tokens:
+  CHD       disc images   (psx, ps2, psp, dreamcast, saturn, pcenginecd)
+  RVZ       GameCube and Wii
+  ZCCI      Nintendo 3DS  (decrypt the ROM first)
+  NSZ       Nintendo Switch
+  WUA       Wii U
+  7Z        cartridge ROMs read by RetroArch
+  ZIP       arcade romsets (FBNeo and MAME will not read 7z)
+  NDS-TRIM  Nintendo DS, trim padding only
+  Z64       leave uncompressed; this is the most compatible form
+  -         do not convert
+
+Arrow form
+----------
+
+Chrono Cross -> psx -> CHD
+Persona 4 -> ps2 -> CHD
+Castlevania: The Dracula X Chronicles -> psp -> CHD
+Jet Set Radio -> dreamcast -> CHD
+Metroid Prime -> gc -> RVZ
+Super Mario Galaxy 2 -> wii -> RVZ
+Fire Emblem: Awakening -> n3ds -> ZCCI
+Mario Kart 8 Deluxe -> switch -> NSZ
+The Legend of Zelda: The Wind Waker HD -> wiiu -> WUA
+Super Mario World -> snes -> 7Z
+Castlevania: Aria of Sorrow -> gba -> 7Z
+Sonic the Hedgehog 2 -> megadrive -> 7Z
+Pokemon HeartGold -> nds -> NDS-TRIM
+Marvel vs. Capcom 2 -> fbneo -> ZIP
+Super Mario 64 -> n64 -> Z64
+Half-Life 2 -> windows -> -
+
+Table form
+----------
+
+| Game                        | Folder | Format | Done |
+| --------------------------- | ------ | ------ | ---- |
+| Silent Hill 2               | ps2    | CHD    | yes  |
+| God of War: Chains of Olympus | psp  | CHD    | yes  |
+| Xenoblade Chronicles        | wii    | RVZ    |      |
+| Super Smash Bros. Ultimate  | switch | NSZ    |      |
+| Pokemon Ultra Sun           | n3ds   | ZCCI   |      |
+| Chrono Trigger              | snes   | 7Z     | yes  |
+
+Notes
+-----
+
+PS2 needs zlib and hunk 2048 for NetherSX2; it cannot read a zstd CHD.
+3DS ROMs must be decrypted before ZCCI compression will save anything.
+Switch base games, updates and DLC are separate files and compress separately.

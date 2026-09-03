@@ -1,0 +1,10 @@
+version: 2
+updates:
+  # Actions only. The Python dependencies are pinned deliberately (PySide6 and
+  # nsz both have version constraints explained in pyproject.toml), and the
+  # converter tools are pinned by checksum in src/aynthor/core/tools/manifest.py
+  # where a bump also needs a new hash, so neither should be bumped by a bot.
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: monthly

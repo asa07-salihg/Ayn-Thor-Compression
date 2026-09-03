@@ -1,0 +1,26 @@
+name: Feature request
+description: A format, tool or workflow that should be supported.
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do
+      description: The task, not the solution. What are you converting, and for which emulator?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What would help
+    validations:
+      required: true
+
+  - type: input
+    id: tool
+    attributes:
+      label: Tool that does it today
+      description: >
+        If a command-line tool already implements this, link it. Adding a format
+        is mostly a matter of wrapping one.
