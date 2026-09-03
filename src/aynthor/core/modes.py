@@ -1,16 +1,18 @@
-"""What "compress" and "open" are called in each format's Mode dropdown.
+"""What each direction is called, per format.
 
 Why
-    "Compress" and "Decompress" are the wrong words at the point of use. A user
-    with a `.zcci` does not want to "decompress" it, they want their `.cci`
-    back; a user with a `.nds` is not compressing anything, they are trimming
-    padding. The dropdown therefore shows the destination (`-> CUE/ISO`) and
-    the panel explains it. Formats with one direction (WUA, Decrypt 3DS, NDS
-    trim) declare exactly one entry, so the dropdown shows no choice that does
-    not exist.
+    One verb does not cover all of these. A `.7z` is unzipped, a `.chd` is
+    decompressed, a `.nds` is trimmed, and a `.cia` is decrypted; calling every
+    one of them "open" told the user nothing about what they were about to get.
+    So the label shows the destination (`-> CUE/ISO`) and the verb is the one
+    that belongs to that format, which is what the queue and its menu print.
+
+    Formats with one direction (WUA, Decrypt 3DS, NDS trim) declare exactly one
+    entry, so nothing offers a reverse that does not exist.
 
 Used by
-    `ui.option_panels.BaseFormatPanel`, which builds the Mode dropdown from it.
+    `ui.queue_view` (the Becomes cell and its menu),
+    `ui.option_panels.BaseFormatPanel`.
 
 Reference
     Direction support per tool: each converter module says what it can undo.
@@ -27,36 +29,36 @@ from aynthor.core.models import CompressionFormat, ConversionMode
 class ModeInfo:
     mode: ConversionMode
     label: str        # what the dropdown shows
-    description: str  # what the action is called elsewhere in the interface
+    description: str  # the verb: Compress, Decompress, Unzip, Trim padding...
 
 
 FORMAT_MODES: dict[CompressionFormat, tuple[ModeInfo, ...]] = {
     CompressionFormat.CHD: (
         ModeInfo(ConversionMode.COMPRESS, "-> CHD", "Compress"),
-        ModeInfo(ConversionMode.DECOMPRESS, "-> CUE/ISO", "Open"),
+        ModeInfo(ConversionMode.DECOMPRESS, "-> CUE/ISO", "Decompress"),
     ),
     CompressionFormat.RVZ: (
         ModeInfo(ConversionMode.COMPRESS, "-> RVZ", "Compress"),
-        ModeInfo(ConversionMode.DECOMPRESS, "-> ISO", "Open"),
+        ModeInfo(ConversionMode.DECOMPRESS, "-> ISO", "Decompress"),
     ),
     CompressionFormat.CSO: (
         ModeInfo(ConversionMode.COMPRESS, "-> CSO", "Compress"),
-        ModeInfo(ConversionMode.DECOMPRESS, "-> ISO", "Open"),
+        ModeInfo(ConversionMode.DECOMPRESS, "-> ISO", "Decompress"),
     ),
     CompressionFormat.Z3DS: (
         ModeInfo(ConversionMode.COMPRESS, "-> ZCCI", "Compress"),
-        ModeInfo(ConversionMode.DECOMPRESS, "-> CCI/CIA", "Open"),
+        ModeInfo(ConversionMode.DECOMPRESS, "-> CCI/CIA", "Decompress"),
     ),
     CompressionFormat.NDS_TRIM: (
         ModeInfo(ConversionMode.COMPRESS, "-> Trimmed .nds", "Trim padding"),
     ),
     CompressionFormat.NSZ: (
         ModeInfo(ConversionMode.COMPRESS, "-> NSZ", "Compress"),
-        ModeInfo(ConversionMode.DECOMPRESS, "-> NSP", "Open"),
+        ModeInfo(ConversionMode.DECOMPRESS, "-> NSP", "Decompress"),
     ),
     CompressionFormat.SEVEN_ZIP: (
         ModeInfo(ConversionMode.COMPRESS, "-> 7z/ZIP", "Bundle"),
-        ModeInfo(ConversionMode.DECOMPRESS, "-> ROM", "Open"),
+        ModeInfo(ConversionMode.DECOMPRESS, "-> ROM", "Unzip"),
     ),
     CompressionFormat.WUA: (
         ModeInfo(ConversionMode.COMPRESS, "-> WUA", "Compress"),

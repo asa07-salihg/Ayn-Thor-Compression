@@ -138,3 +138,87 @@ def test_archive_open_targets_a_folder():
 def test_format_info_round_trip():
     for info in FORMAT_CATALOG:
         assert format_info(info.format) is info
+
+
+# ------------------------------------------------------- direction on adding
+
+def test_a_file_already_in_the_target_format_is_queued_as_an_expand():
+    """A .chd queued as "compress to CHD" wrote its own input path."""
+    from aynthor.core.formats import natural_mode
+    from aynthor.core.models import CompressionFormat, ConversionMode
+
+    assert natural_mode(Path("Chrono Cross.chd"), CompressionFormat.CHD) \
+        is ConversionMode.DECOMPRESS
+    assert natural_mode(Path("Chrono Cross.cue"), CompressionFormat.CHD) \
+        is ConversionMode.COMPRESS
+
+
+@pytest.mark.parametrize("name, fmt", [
+    ("game.rvz", CompressionFormat.RVZ),
+    ("game.cso", CompressionFormat.CSO),
+    ("game.zso", CompressionFormat.CSO),
+    ("game.zcci", CompressionFormat.Z3DS),
+    ("game.zcia", CompressionFormat.Z3DS),
+    ("game.nsz", CompressionFormat.NSZ),
+    ("game.xcz", CompressionFormat.NSZ),
+])
+def test_every_compressed_container_expands_on_the_way_in(name, fmt):
+    from aynthor.core.formats import natural_mode
+    from aynthor.core.models import ConversionMode
+
+    assert natural_mode(Path(name), fmt) is ConversionMode.DECOMPRESS
+
+
+@pytest.mark.parametrize("name, fmt", [
+    # A cartridge archive is the form RetroArch reads, and a folder of MAME
+    # romsets is meant to stay zipped: expanding these on sight would be wrong.
+    ("Chrono Trigger.7z", CompressionFormat.SEVEN_ZIP),
+    ("sf2.zip", CompressionFormat.SEVEN_ZIP),
+    # Nothing in the name says whether a cart has been trimmed or decrypted.
+    ("game.nds", CompressionFormat.NDS_TRIM),
+    ("game.cci", CompressionFormat.DEC_3DS),
+    # Nothing reverses a WUA.
+    ("game.wua", CompressionFormat.WUA),
+])
+def test_the_formats_that_must_not_auto_expand_do_not(name, fmt):
+    from aynthor.core.formats import natural_mode
+    from aynthor.core.models import ConversionMode
+
+    assert natural_mode(Path(name), fmt) is ConversionMode.COMPRESS
+
+
+def test_reverse_on_only_names_extensions_the_format_already_claims():
+    """Otherwise a file could auto-expand into a format that will not take it."""
+    from aynthor.core.formats import FORMAT_CATALOG
+
+    for info in FORMAT_CATALOG:
+        assert set(info.reverse_on) <= set(info.extensions), info.label
+
+
+def test_a_format_that_auto_expands_has_a_direction_to_expand_into():
+    from aynthor.core.formats import FORMAT_CATALOG
+    from aynthor.core.models import ConversionMode
+    from aynthor.core.modes import FORMAT_MODES
+
+    for info in FORMAT_CATALOG:
+        if not info.reverse_on:
+            continue
+        modes = {m.mode for m in FORMAT_MODES[info.format]}
+        assert ConversionMode.DECOMPRESS in modes, info.label
+
+
+def test_each_format_names_its_reverse_after_what_it_actually_does():
+    """One verb does not cover unzipping an archive and decompressing a CHD."""
+    from aynthor.core.modes import FORMAT_MODES
+
+    verbs = {
+        fmt: [m.description for m in modes if m.mode is ConversionMode.DECOMPRESS]
+        for fmt, modes in FORMAT_MODES.items()
+    }
+    assert verbs[CompressionFormat.SEVEN_ZIP] == ["Unzip"]
+    assert verbs[CompressionFormat.CHD] == ["Decompress"]
+    assert verbs[CompressionFormat.NSZ] == ["Decompress"]
+    # And nothing is still called "Open", which said nothing.
+    for fmt, modes in FORMAT_MODES.items():
+        for info in modes:
+            assert info.description != "Open", fmt

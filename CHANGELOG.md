@@ -3,6 +3,25 @@
 Notable changes, newest first. Versions follow
 [semantic versioning](https://semver.org/).
 
+## 1.1.0
+
+- **A file that is already compressed is added as an expand, not a compress.**
+  Dropping a `.chd` in queued it as "compress to CHD", which made the output
+  path the input path: depending on the conflict policy it overwrote the file or
+  was silently skipped, and neither said why. `.chd`, `.rvz`, `.cso`, `.zso`,
+  `.nsz`, `.xcz` and the ZCCI containers now arrive as **(decompress)** rows and
+  write the original back out. Cartridge `.7z` and `.zip` files still arrive as
+  archives, because that is the form RetroArch and MAME read them in; the row
+  menu offers *Unzip instead of convert* for the exceptions.
+- **Each direction is named after what it does.** Every reverse used to be
+  called "Open", which covered unzipping an archive and decompressing a CHD and
+  described neither. A row now reads `7z / ZIP (unzip)` or `CHD (decompress)`,
+  and the menu entry matches.
+- **The version is in the title bar**, not only in About, because that is the
+  first thing a bug report asks for.
+- **Help now opens the changelog** instead of a `docs/` folder.
+- A support link, in the About box and as the repository's Sponsor button.
+
 ## 1.0.0
 
 First public release.

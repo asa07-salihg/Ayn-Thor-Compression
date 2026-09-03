@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "aynthor-compression"
-version = "1.0.0"
+version = "1.1.0"
 description = "Desktop front end for the ROM compression tools emulators expect"
 readme = "README.md"
 requires-python = ">=3.10"

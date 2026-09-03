@@ -40,7 +40,12 @@ from PySide6.QtWidgets import (
     QTableWidgetItem,
 )
 
-from aynthor.core.formats import FORMAT_CATALOG, format_info, suggest_output_path
+from aynthor.core.formats import (
+    FORMAT_CATALOG,
+    format_info,
+    natural_mode,
+    suggest_output_path,
+)
 from aynthor.core.models import CompressionFormat, ConversionMode, QueueItem
 from aynthor.core.modes import FORMAT_MODES
 from aynthor.core.presets import detect_platform_format
@@ -144,7 +149,7 @@ class QueueTable(QTableWidget):
             (self.COL_FILE, QHeaderView.ResizeMode.Stretch, 0),
             (self.COL_GAME, QHeaderView.ResizeMode.Interactive, 150),
             (self.COL_TYPE, QHeaderView.ResizeMode.ResizeToContents, 0),
-            (self.COL_BECOMES, QHeaderView.ResizeMode.Interactive, 130),
+            (self.COL_BECOMES, QHeaderView.ResizeMode.Interactive, 150),
             (self.COL_SIZE, QHeaderView.ResizeMode.Interactive, 84),
             (self.COL_SAVED, QHeaderView.ResizeMode.Interactive, 76),
             (self.COL_STATUS, QHeaderView.ResizeMode.Interactive, 92),
@@ -194,11 +199,12 @@ class QueueTable(QTableWidget):
                 continue
 
             options = self._with_switch_metadata(path, fmt, dict(detected.tool_options))
+            mode = natural_mode(path, fmt)
             self._append(QueueItem(
                 path=path,
                 format=fmt,
-                mode=ConversionMode.COMPRESS,
-                output=output_for(path, fmt, ConversionMode.COMPRESS, settings, options),
+                mode=mode,
+                output=output_for(path, fmt, mode, settings, options),
                 tool_options=options,
                 game_group=options.get("game_group", ""),
                 content_type=options.get("content_type", ""),
@@ -220,11 +226,12 @@ class QueueTable(QTableWidget):
             if self._already_queued(path):
                 continue
             options = self._with_switch_metadata(path, fmt, dict(options))
+            mode = natural_mode(path, fmt)
             self._append(QueueItem(
                 path=path,
                 format=fmt,
-                mode=ConversionMode.COMPRESS,
-                output=output_for(path, fmt, ConversionMode.COMPRESS, settings, options),
+                mode=mode,
+                output=output_for(path, fmt, mode, settings, options),
                 tool_options=options,
                 game_group=options.get("game_group", ""),
                 content_type=options.get("content_type", ""),
@@ -355,8 +362,10 @@ class QueueTable(QTableWidget):
         info = format_info(fmt) if fmt else None
         becomes = self.item(row, self.COL_BECOMES)
         label = info.label if info else "?"
-        if mode == ConversionMode.DECOMPRESS:
-            label = f"{label} (open)"
+        if mode == ConversionMode.DECOMPRESS and fmt is not None:
+            # The verb belongs to the format: a .7z is unzipped, a .chd is
+            # decompressed. "(open)" covered both and said neither.
+            label = f"{label} ({self._verb(fmt, mode).lower()})"
         becomes.setText(label)
 
         output = output_for(path, fmt, mode, self._settings, options) if fmt else path
@@ -375,7 +384,7 @@ class QueueTable(QTableWidget):
         for row in rows:
             becomes = self.item(row, self.COL_BECOMES)
             becomes.setData(_ROLE_FORMAT, fmt.value)
-            if not self._supports_open(fmt):
+            if not self._supports_reverse(fmt):
                 becomes.setData(_ROLE_MODE, ConversionMode.COMPRESS.value)
             self._refresh_row(row)
             self.update_status(row, "Waiting")
@@ -408,8 +417,16 @@ class QueueTable(QTableWidget):
         return changed
 
     @staticmethod
-    def _supports_open(fmt: CompressionFormat) -> bool:
+    def _supports_reverse(fmt: CompressionFormat) -> bool:
         return any(m.mode == ConversionMode.DECOMPRESS for m in FORMAT_MODES.get(fmt, ()))
+
+    @staticmethod
+    def _verb(fmt: CompressionFormat, mode: ConversionMode) -> str:
+        """What this format calls this direction. See `core.modes`."""
+        for info in FORMAT_MODES.get(fmt, ()):
+            if info.mode == mode:
+                return info.description
+        return "Convert"
 
     # --------------------------------------------------------------- results
 
@@ -490,9 +507,10 @@ class QueueTable(QTableWidget):
             action.triggered.connect(lambda _c, f=info.format, r=rows: self.set_format(r, f))
             menu.addAction(action)
 
-        if current is not None and self._supports_open(current):
+        if current is not None and self._supports_reverse(current):
             menu.addSeparator()
-            reverse = QAction("Open instead of convert", self, checkable=True)
+            verb = self._verb(current, ConversionMode.DECOMPRESS)
+            reverse = QAction(f"{verb} instead of convert", self, checkable=True)
             reverse.setChecked(self.row_mode(row) == ConversionMode.DECOMPRESS)
             reverse.setToolTip("Turn an already-compressed file back into the original.")
             reverse.triggered.connect(

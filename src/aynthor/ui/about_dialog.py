@@ -24,7 +24,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from aynthor import PROJECT_URL, __version__
+from aynthor import PROJECT_URL, SUPPORT_URL, __version__
 from aynthor.core.tools.manifest import INSTALLABLE
 
 
@@ -49,7 +49,8 @@ class AboutDialog(QDialog):
             "A desktop front end for the ROM compression tools each emulator expects. "
             "It converts nothing itself: every format is handled by the project that "
             "defined it.<br><br>"
-            f'<a href="{PROJECT_URL}">{PROJECT_URL}</a>'
+            f'<a href="{PROJECT_URL}">{PROJECT_URL}</a><br>'
+            f'<a href="{SUPPORT_URL}">Buy me a coffee</a>'
         )
         summary.setWordWrap(True)
         summary.setOpenExternalLinks(True)

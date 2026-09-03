@@ -1,0 +1,4 @@
+# Puts the Sponsor button at the top of the repository. The same address is in
+# the README and in the app's About box; src/aynthor/__init__.py holds it for
+# the code side.
+buy_me_a_coffee: asa07salihg

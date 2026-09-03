@@ -19,7 +19,7 @@ in the range. Nothing in it is tied to one device: the defaults are the formats
 and flags each emulator needs, and every one of them is visible and editable
 under **Settings > Platform presets**.
 
-[Download](#download) · [Formats](#supported-formats) · [Legal](#legal) · [From source](#running-from-source)
+[Download](#download) · [Formats](#supported-formats) · [Legal](#legal) · [From source](#running-from-source) · [Changelog](CHANGELOG.md)
 
 ![The queue, part way through a batch](docs/images/ui-dark.png)
 
@@ -79,9 +79,14 @@ Two steps prepare a file rather than shrink it:
 | **Decrypt 3DS** | `.cia`, `.3ds`, `.cci` | A cart dumped from a console is encrypted, and encrypted data does not compress. This has to run before ZCCI |
 | **NDS trim** | `.nds` | melonDS will not read an archive, so trimming the unused tail of the cart is the only saving available |
 
-Every format that can be undone can be undone here: set **Mode** to the second
-entry and a CHD becomes a cue/bin again, a ZCCI becomes the exact `.cci` it was
-made from. WUA is the exception, because nothing reverses it.
+Every format that can be undone can be undone here, and a file that is already
+compressed is queued that way when you add it: drop a `.chd` in and the row
+reads **CHD (decompress)**, writing the cue/bin back out. The same goes for
+`.rvz`, `.cso`, `.zso`, `.nsz`, `.xcz` and the ZCCI containers, which come back
+byte for byte. Cartridge `.7z` and `.zip` files are left alone, because that is
+the form RetroArch and MAME want them in; click **Becomes** and pick *Unzip
+instead of convert* for the odd one you do want expanded. WUA is the exception
+either way, because nothing reverses it.
 
 N64 is deliberately left alone. An uncompressed `.z64` is the most compatible
 form and the emulators that matter do not read anything smaller.
@@ -207,6 +212,12 @@ to a release. A release needs both `AynThorCompression.exe` and
 `SHA256SUMS.txt`, from the same build and under exactly those names, or the
 updater will refuse it.
 
+## Changelog
+
+What changed in each release, newest first: [CHANGELOG.md](CHANGELOG.md). The
+running version is in the title bar and under **More > About**, and the same
+page opens from **More > What's new**.
+
 ## How it is put together
 
 `src/aynthor/core/` is the engine and imports Qt nowhere, which is what lets the
@@ -244,6 +255,11 @@ and [Project_CTR](https://github.com/3DSGuy/Project_CTR)
 Folder layout from
 [ES-DE-Directories](https://github.com/retrogamecorps/ES-DE-Directories).
 Licences are listed in [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
+
+## Support
+
+The app is free and always will be. If it saved you a card's worth of space and
+you feel like it, [buy me a coffee](https://buymeacoffee.com/asa07salihg).
 
 ## License
 

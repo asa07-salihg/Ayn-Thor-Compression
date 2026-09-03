@@ -196,6 +196,16 @@ def test_the_window_builds_and_starts_empty(app):
     window.close()
 
 
+def test_the_title_bar_carries_the_version(app):
+    """A bug report needs it, and nobody opens About to find it."""
+    from aynthor import __version__
+    from aynthor.ui.main_window import MainWindow
+
+    window = MainWindow()
+    assert __version__ in window.windowTitle()
+    window.close()
+
+
 def test_adding_files_fills_the_queue_and_the_summary(app, tmp_path):
     from aynthor.ui.main_window import MainWindow
 
@@ -232,6 +242,35 @@ def test_the_becomes_cell_offers_the_formats_that_accept_the_file(app, tmp_path)
     # A .cia can be compressed to ZCCI or decrypted; both must be offered.
     assert any(label.startswith("ZCCI") for label in labels)
     assert any(label.startswith("Decrypt 3DS") for label in labels)
+
+
+def test_an_already_compressed_file_arrives_as_an_expand(app, tmp_path):
+    """It used to arrive as "compress to CHD", whose output was its own input."""
+    from aynthor.core.models import ConversionMode
+    from aynthor.ui.main_window import MainWindow
+
+    (tmp_path / "Chrono Cross.chd").write_bytes(b"\0" * 2048)
+    (tmp_path / "Metroid Prime.iso").write_bytes(b"\0" * 2048)
+
+    window = MainWindow()
+    window.show()
+    window._add([tmp_path])
+    app.processEvents()
+
+    by_name = {
+        window.queue.item(row, window.queue.COL_FILE).text(): row
+        for row in range(window.queue.rowCount())
+    }
+    chd = by_name["Chrono Cross.chd"]
+    iso = by_name["Metroid Prime.iso"]
+
+    assert window.queue.row_mode(chd) is ConversionMode.DECOMPRESS
+    assert window.queue.row_mode(iso) is ConversionMode.COMPRESS
+    # And the row says which way round it is, in this format's own verb.
+    assert window.queue.item(chd, window.queue.COL_BECOMES).text() == "CHD (decompress)"
+    # The output is a different file from the input, which is what was broken.
+    assert window.queue.row_item(chd).output != (tmp_path / "Chrono Cross.chd")
+    window.close()
 
 
 def test_switching_theme_repaints_instead_of_leaving_half_the_window_behind(app):

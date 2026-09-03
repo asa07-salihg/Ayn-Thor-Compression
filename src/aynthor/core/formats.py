@@ -37,6 +37,12 @@ class FormatInfo:
     tool: str
     reason: str = ""  # why this format is the right target for that platform
     notes: str = ""   # shown above the format's options
+    # Extensions that mean the file has already been through this format, so
+    # adding one should queue an expand rather than a compress. Empty where the
+    # compressed form is the form the emulator wants to keep (7z and ZIP
+    # cartridge archives) or where nothing in the name distinguishes a
+    # processed file from an untouched one (NDS trim, Decrypt 3DS).
+    reverse_on: tuple[str, ...] = ()
 
 
 FORMAT_CATALOG: tuple[FormatInfo, ...] = (
@@ -46,6 +52,7 @@ FORMAT_CATALOG: tuple[FormatInfo, ...] = (
         "PS1, PS2, PSP, Dreamcast",
         (".cue", ".bin", ".iso", ".gdi", ".chd", ".img"),
         "chdman",
+        reverse_on=(".chd",),
         reason="One file instead of a cue/bin pair, and every mainstream disc "
                "emulator reads it directly.",
         notes="PS2 on NetherSX2 needs zlib and hunk 2048; it cannot read zstd CHDs.",
@@ -56,6 +63,7 @@ FORMAT_CATALOG: tuple[FormatInfo, ...] = (
         "GameCube, Wii",
         (".iso", ".wbfs", ".rvz", ".wia", ".gcz"),
         "DolphinTool",
+        reverse_on=(".rvz",),
         reason="Dolphin's own format. It drops the junk padding Nintendo discs "
                "are full of, which GCZ and WBFS keep.",
         notes="Defaults are Dolphin's: zstd level 5, block size 131072.",
@@ -66,6 +74,7 @@ FORMAT_CATALOG: tuple[FormatInfo, ...] = (
         "PSP (alternative to CHD)",
         (".iso", ".cso", ".zso"),
         "maxcso",
+        reverse_on=(".cso", ".zso"),
         reason="Smaller than CHD on PSP titles, and PPSSPP reads it natively. "
                "Pick CHD instead if you want one format across all disc systems.",
         notes="ZSO trades a little size for much faster decompression on weak hardware.",
@@ -77,6 +86,7 @@ FORMAT_CATALOG: tuple[FormatInfo, ...] = (
         (".cci", ".cia", ".3ds", ".cxi", ".3dsx",
          ".zcci", ".zcia", ".zcxi", ".z3dsx", ".z3ds"),
         "rom-converto (or z3ds_compressor)",
+        reverse_on=(".zcci", ".zcia", ".zcxi", ".z3dsx", ".z3ds"),
         reason="The only compressed 3DS format Azahar loads directly. Around a "
                "quarter off a decrypted cart.",
         notes="The ROM must be decrypted first: encrypted bytes do not compress. "
@@ -99,6 +109,7 @@ FORMAT_CATALOG: tuple[FormatInfo, ...] = (
         "Nintendo Switch",
         (".nsp", ".xci", ".nsz", ".xcz"),
         "nsz",
+        reverse_on=(".nsz", ".xcz"),
         reason="Recompresses the NCA contents with zstd while leaving every "
                "signature intact, so installers still accept the file.",
         notes="Needs your own prod.keys. Base game, update and DLC are separate "
@@ -156,6 +167,27 @@ def detect_format(path: Path) -> FormatInfo | None:
         if ext in info.extensions:
             return info
     return None
+
+
+def natural_mode(path: Path, target: CompressionFormat) -> ConversionMode:
+    """Which direction adding this file should mean.
+
+    Why
+        A `.chd` dropped on the window is not a file anybody wants compressed
+        to CHD, and queueing it that way produced a row whose output was its own
+        input: it either overwrote the file or was skipped by the conflict
+        policy, and neither said why. A file that is already in the target
+        format is a request to get the original back.
+
+        Only the disc and container formats do this. A `.7z` of a cartridge ROM
+        is the form RetroArch reads, and a folder of MAME `.zip` romsets is
+        meant to stay zipped, so those stay a compress and the row menu still
+        offers Open for the odd file that needs it.
+    """
+    info = format_info(target)
+    if info is not None and path.suffix.lower() in info.reverse_on:
+        return ConversionMode.DECOMPRESS
+    return ConversionMode.COMPRESS
 
 
 def known_extensions() -> set[str]:

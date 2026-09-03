@@ -43,7 +43,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from aynthor import DOCS_URL
+from aynthor import CHANGELOG_URL, __version__
 from aynthor.core.esde import audit_folders, resolve_roms_root
 from aynthor.core.formats import format_info, known_extensions
 from aynthor.core.jobs import build_jobs
@@ -83,7 +83,9 @@ _REQUIRED_TOOL = {
 class MainWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
-        self.setWindowTitle("Ayn Thor Compression")
+        # The version is in the title as well as in About, because a bug
+        # report needs it and nobody opens About to find it.
+        self.setWindowTitle(f"Ayn Thor Compression {__version__}")
         self.setWindowIcon(theme.app_icon())
         self.resize(1060, 700)
         self.setMinimumSize(760, 480)
@@ -192,9 +194,10 @@ class MainWindow(QMainWindow):
             lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(str(self.tools.tools_root))))
         menu.addAction(open_tools)
 
-        docs = QAction("Documentation", self)
-        docs.triggered.connect(lambda: QDesktopServices.openUrl(QUrl(DOCS_URL)))
-        menu.addAction(docs)
+        changelog = QAction(f"What's new in {__version__}", self)
+        changelog.triggered.connect(
+            lambda: QDesktopServices.openUrl(QUrl(CHANGELOG_URL)))
+        menu.addAction(changelog)
 
         check_updates = QAction("Check for updates", self)
         check_updates.setToolTip(
