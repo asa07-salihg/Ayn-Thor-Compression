@@ -21,6 +21,11 @@ Notable changes, newest first. Versions follow
   first thing a bug report asks for.
 - **Help now opens the changelog** instead of a `docs/` folder.
 - A support link, in the About box and as the repository's Sponsor button.
+- The README screenshots are reproducible: `scripts/make_screenshots.py` builds
+  them from sparse files whose sizes are the media's own capacity or a published
+  figure, and every row is Waiting because nothing was converted to make them.
+  The previous pair had been staged, and said "28 KB" and "saved 3.9 GB" in the
+  same window.
 
 ## 1.0.0
 

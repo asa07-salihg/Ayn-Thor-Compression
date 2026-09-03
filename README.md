@@ -21,7 +21,7 @@ under **Settings > Platform presets**.
 
 [Download](#download) · [Formats](#supported-formats) · [Legal](#legal) · [From source](#running-from-source) · [Changelog](CHANGELOG.md)
 
-![The queue, part way through a batch](docs/images/ui-dark.png)
+![A card's worth of files queued, each with the format its platform needs](docs/images/ui-dark.png)
 
 The format for each file is worked out when it is added. Click the **Becomes**
 cell to change it, or right-click for the same list plus everything else a row
@@ -137,8 +137,6 @@ Each download is checked against a SHA-256 recorded in
 disk, and versions are pinned, so upgrading a tool is a deliberate change with a
 new checksum rather than something that happens quietly on your machine. One
 entry cannot be verified, and the Tools window says which and why.
-
-![The Tools window](docs/images/ui-tools.png)
 
 [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) lists every tool, its version,
 its licence, and how to re-derive the hashes yourself.
