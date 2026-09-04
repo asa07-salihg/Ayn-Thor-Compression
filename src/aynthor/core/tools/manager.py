@@ -111,6 +111,43 @@ class ToolsManager:
     def status(self) -> dict[str, bool]:
         return {spec.key: self.is_available(spec.key) for spec in INSTALLABLE}
 
+    def matches_manifest(self, key: str) -> bool:
+        """Do the installed files still hash to what this release pinned?
+
+        Why
+            `is_available` only asks whether the file is there, which was enough
+            when a tool was installed once and never changed. It is not enough
+            once a pin moves: an older build's 7za sat in `tools/` forever,
+            reported as installed, and no update ever replaced it.
+
+            An entry with no checksum (DolphinTool) cannot be told apart from an
+            older one and is treated as matching, which is the same admission the
+            Tools window already makes about it.
+        """
+        spec = SPECS_BY_KEY.get(key)
+        if spec is None or spec.pip_package:
+            return True
+        for expected in spec.files:
+            if expected.sha256 is None:
+                continue
+            path = self.tools_root / expected.name
+            if not path.is_file() or sha256_of(path) != expected.sha256:
+                return False
+        return True
+
+    def outdated(self) -> list[str]:
+        """Installed tools whose files are not the ones this release pinned.
+
+        Hashing every installed tool costs well under a second, and it only
+        happens when the Tools window asks or an install runs, not on the path
+        of a conversion.
+        """
+        return [
+            spec.key
+            for spec in INSTALLABLE
+            if self.is_available(spec.key) and not self.matches_manifest(spec.key)
+        ]
+
     def unverified(self) -> list[str]:
         """Installed tools whose manifest entry has no checksum to check."""
         return [
@@ -123,14 +160,23 @@ class ToolsManager:
     # ----------------------------------------------------------------- install
 
     def install_all(self, progress: Progress | None = None) -> list[str]:
-        """Install everything missing. Returns one message per failure."""
+        """Install everything missing or superseded. One message per failure.
+
+        A tool whose files no longer match the manifest is reinstalled rather
+        than skipped, which is what makes a new pin in a new release of this app
+        actually reach the machine it is running on.
+        """
         say = progress or (lambda _msg: None)
         errors: list[str] = []
 
         for spec in TOOL_SPECS:
-            if self.is_available(spec.key) or (
+            present = self.is_available(spec.key) or (
                 spec.key == BOOTSTRAP_KEY and (self.tools_root / "7zr.exe").is_file()
-            ):
+            )
+            if present and not self.matches_manifest(spec.key):
+                say(f"{spec.label}: installed copy is not {spec.version}, replacing it")
+                present = False
+            if present:
                 if spec.key != BOOTSTRAP_KEY:
                     say(f"{spec.label}: already installed")
                 continue

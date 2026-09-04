@@ -11,9 +11,9 @@ modified; the app invokes each tool on the command line.
 | [chdman](https://www.mamedev.org/) (MAME) | namDHC v2.0 build | GPL-2.0-or-later | CHD | yes |
 | [DolphinTool](https://dolphin-emu.org/) | 2506a | GPL-2.0-or-later | RVZ | **no** |
 | [maxcso](https://github.com/unknownbrackets/maxcso) | 1.13.0 | ISC | CSO, ZSO, DAX | yes |
-| [7-Zip](https://www.7-zip.org/) | 26.02 | LGPL-2.1-or-later (with unRAR restriction) | 7z, ZIP | yes |
+| [7-Zip](https://www.7-zip.org/) | 26.03 | LGPL-2.1-or-later (with unRAR restriction) | 7z, ZIP | yes |
 | [ndstrim](https://github.com/Nemris/ndstrim) | 0.2.1 | MIT | NDS trim | yes |
-| [rom-converto](https://github.com/DevYukine/rom-converto) | 0.20.0 | MIT | WUA, ZCCI | yes |
+| [rom-converto](https://github.com/DevYukine/rom-converto) | 0.21.0 | MIT | WUA, ZCCI | yes |
 | [z3ds_compress](https://github.com/energeticokay/z3ds_compress) | `corruption_fix` | GPL-3.0-or-later | ZCCI (fallback engine) | yes |
 | [nsz](https://github.com/nicoboss/nsz) | >= 5.0.0 | MIT | NSZ, XCZ | pip |
 | [Batch CIA 3DS Decryptor Redux](https://github.com/xxmichibxx/Batch-CIA-3DS-Decryptor-Redux) | 1.0.6.3 | MIT | Decrypt 3DS | yes |

@@ -34,6 +34,10 @@ against. That entry carries `sha256=None`, the Tools window marks it
 install you already trust instead. It is the only such entry, and a test fails
 if another appears.
 
+**An installed tool is re-checked, not trusted because it is there.** Its files
+are hashed against the manifest, so a copy left over from an older pin is shown
+as outdated and replaced with the pinned build rather than being used forever.
+
 **Checking for newer tools never installs one.** A version that is not in the
 manifest has no checksum to be verified against, so an updated tool ships in the
 next release of this app instead, after someone has read the upstream changelog

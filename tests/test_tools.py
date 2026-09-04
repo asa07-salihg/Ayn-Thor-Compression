@@ -413,3 +413,55 @@ def test_the_rest_are_not_asked_once_github_is_rate_limiting(monkeypatch):
         versions.Status.UNKNOWN, versions.Status.UNKNOWN, versions.Status.PIP,
     ]
     assert reports[1].detail == versions.RATE_LIMITED
+
+
+# ------------------------------------- an installed tool that is no longer it
+
+def test_a_tool_that_no_longer_matches_the_manifest_is_reported_outdated(tmp_path, monkeypatch):
+    """`is_available` only asks whether the file is there. Once a pin moves,
+    that is not the same question: an older build's 7za sat in tools/ reported
+    as installed and no update ever replaced it."""
+    from aynthor.core.tools import manager as manager_module
+
+    monkeypatch.setattr(manager_module, "tools_dir", lambda: tmp_path)
+    mgr = manager_module.ToolsManager()
+
+    spec = SPECS_BY_KEY["ndstrim"]
+    target = tmp_path / spec.files[0].name
+    target.write_bytes(b"an older build")
+
+    assert mgr.is_available("ndstrim") is True
+    assert mgr.matches_manifest("ndstrim") is False
+    assert "ndstrim" in mgr.outdated()
+
+
+def test_a_tool_that_matches_is_not_reported_outdated(tmp_path, monkeypatch):
+    import hashlib
+    from dataclasses import replace
+
+    from aynthor.core.tools import manager as manager_module
+
+    monkeypatch.setattr(manager_module, "tools_dir", lambda: tmp_path)
+    mgr = manager_module.ToolsManager()
+
+    spec = SPECS_BY_KEY["ndstrim"]
+    payload = b"the pinned build"
+    (tmp_path / spec.files[0].name).write_bytes(payload)
+
+    pinned = replace(spec, files=(
+        replace(spec.files[0], sha256=hashlib.sha256(payload).hexdigest()),))
+    monkeypatch.setitem(manager_module.SPECS_BY_KEY, "ndstrim", pinned)
+
+    assert mgr.matches_manifest("ndstrim") is True
+    assert "ndstrim" not in mgr.outdated()
+
+
+def test_the_entry_with_no_checksum_cannot_be_called_outdated(tmp_path, monkeypatch):
+    """DolphinTool has nothing to compare against, which the window already says."""
+    from aynthor.core.tools import manager as manager_module
+
+    monkeypatch.setattr(manager_module, "tools_dir", lambda: tmp_path)
+    mgr = manager_module.ToolsManager()
+    (tmp_path / "DolphinTool.exe").write_bytes(b"whatever this is")
+
+    assert mgr.matches_manifest("DolphinTool") is True

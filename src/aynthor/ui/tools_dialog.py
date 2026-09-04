@@ -19,6 +19,12 @@ Why
     release of this app, after someone has read the upstream changelog for
     flag changes.
 
+    The Installed column therefore has three states, not two. A tool can be
+    present and still not be the one this release pins, which is what happens
+    to everyone who installed a tool before the pin moved. Those rows say
+    **outdated** and the button replaces them, so a pin bumped in a release
+    reaches the machine rather than sitting in a changelog.
+
     DolphinTool is offered two ways. Dolphin publishes no checksums for its
     Windows builds, so if the user already has Dolphin, copying the exe they
     already trust is the better option and the button says so.
@@ -194,6 +200,9 @@ class ToolsDialog(QDialog):
     def refresh(self) -> None:
         self.manager.refresh()
         status = self.manager.status()
+        # Installed is not the same question as current: a pin that moved in a
+        # newer release of this app leaves the old binary sitting in tools/.
+        stale = set(self.manager.outdated())
         self.table.setRowCount(len(INSTALLABLE))
 
         for row, spec in enumerate(INSTALLABLE):
@@ -207,8 +216,16 @@ class ToolsDialog(QDialog):
                             if spec.key == "3ds-decryptor" else spec.homepage)
             self.table.setItem(row, self.COL_TOOL, name)
 
-            state = QTableWidgetItem("yes" if installed else "no")
-            state.setForeground(theme.color("ok" if installed else "textThird"))
+            outdated = spec.key in stale
+            state = QTableWidgetItem(
+                "outdated" if outdated else ("yes" if installed else "no"))
+            if outdated:
+                state.setForeground(theme.color("warn"))
+                state.setToolTip(
+                    f"The copy in tools/ is not the {spec.version} this release pins.\n"
+                    "Press the button below to replace it with the pinned build.")
+            else:
+                state.setForeground(theme.color("ok" if installed else "textThird"))
             self.table.setItem(row, self.COL_STATUS, state)
 
             pinned = QTableWidgetItem(spec.version + ("  (unverified)" if unverifiable else ""))
@@ -226,9 +243,15 @@ class ToolsDialog(QDialog):
             self.table.setItem(row, self.COL_LICENCE, licence)
 
         missing = sum(1 for ready in status.values() if not ready)
-        self.download_button.setEnabled(missing > 0)
-        self.download_button.setText(
-            "Everything installed" if missing == 0 else f"Download {missing} missing")
+        self.download_button.setEnabled(missing + len(stale) > 0)
+        if missing == 0 and not stale:
+            self.download_button.setText("Everything installed")
+        elif missing == 0:
+            self.download_button.setText(f"Update {len(stale)} outdated")
+        elif stale:
+            self.download_button.setText(f"Install {missing} missing, update {len(stale)}")
+        else:
+            self.download_button.setText(f"Download {missing} missing")
         self.location.setText(f"Installed in: {self.manager.tools_root}")
 
     def _row_of(self, key: str) -> int:

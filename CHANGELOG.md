@@ -5,6 +5,22 @@ Notable changes, newest first. Versions follow
 
 ## 1.1.1
 
+- **A pinned tool that moved now actually gets replaced.** The app only asked
+  whether a converter's file existed, so a copy installed under an older pin sat
+  in `tools/` forever, reported as installed, and no amount of bumping the
+  manifest ever reached it. The files are hashed against the manifest now: the
+  Tools window shows such a row as **outdated** and the button replaces it. That
+  closes the loop the updater was missing, since the app updates itself from a
+  GitHub release, the release carries the manifest, and the manifest is what
+  decides which converter build the machine ends up running.
+
+- **7-Zip is pinned to 26.03 and rom-converto to 0.21.0.** Both checksums were
+  re-derived from the extracted files, and rom-converto 0.21.0 was checked
+  against the flags this app passes it: `ctr compress` still takes a positional
+  input and output with `--force`, `-l/--level` and `--allow-encrypted`, `wup
+  compress` still takes `-o`, `-l` and `--key`, and `--no-update-check` is still
+  there.
+
 - **The ES-DE folder list was missing most of the disc and arcade folders.**
   Checked against ES-DE's own `es_systems.xml`: nothing it knew was wrong, but
   `arcade`, `neogeo` and the `cps` folders were unknown, and so were `saturn`,
