@@ -3,7 +3,7 @@
 Notable changes, newest first. Versions follow
 [semantic versioning](https://semver.org/).
 
-## 1.1.1
+## 1.1.2
 
 - **A pinned tool that moved now actually gets replaced.** The app only asked
   whether a converter's file existed, so a copy installed under an older pin sat
@@ -20,6 +20,8 @@ Notable changes, newest first. Versions follow
   input and output with `--force`, `-l/--level` and `--allow-encrypted`, `wup
   compress` still takes `-o`, `-l` and `--key`, and `--no-update-check` is still
   there.
+
+## 1.1.1
 
 - **The ES-DE folder list was missing most of the disc and arcade folders.**
   Checked against ES-DE's own `es_systems.xml`: nothing it knew was wrong, but
