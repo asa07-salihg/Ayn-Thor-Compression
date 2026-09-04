@@ -273,6 +273,37 @@ def test_an_already_compressed_file_arrives_as_an_expand(app, tmp_path):
     window.close()
 
 
+def test_the_becomes_cell_names_the_container_it_will_write(app, tmp_path):
+    """It said ZCCI over a file that would be written as .zcia, and 7z / ZIP
+    over an arcade romset that would be written as .zip."""
+    from aynthor.ui.main_window import MainWindow
+
+    roms = tmp_path / "ROMs"
+    for relative in ("3ds/Game.cia", "3ds/Cart.3ds", "fbneo/sf2.zip", "snes/Mario.sfc"):
+        path = roms / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b"\0" * 2048)
+
+    window = MainWindow()
+    window.show()
+    window._add([roms])
+    app.processEvents()
+
+    shown = {
+        window.queue.item(row, window.queue.COL_FILE).text():
+            window.queue.item(row, window.queue.COL_BECOMES).text()
+        for row in range(window.queue.rowCount())
+    }
+    window.close()
+
+    assert shown["Game.cia"] == "ZCIA"
+    assert shown["Cart.3ds"] == "ZCCI"
+    assert shown["Mario.sfc"] == "7Z"
+    # An arcade romset that is already a zip has nothing to do, and is skipped
+    # with a reason rather than queued to overwrite itself.
+    assert "sf2.zip" not in shown
+
+
 def test_switching_theme_repaints_instead_of_leaving_half_the_window_behind(app):
     from aynthor.ui.main_window import MainWindow
     from aynthor.ui.theme import Mode, apply_theme, is_dark

@@ -34,13 +34,32 @@ ESDE_PLATFORM_FOLDERS: dict[str, tuple[str, ...]] = {
     "wii": ("wii",),
     "n3ds": ("n3ds",),
     "switch": ("switch",),
-    "snes": ("snes", "sfc"),
+    "snes": ("snes", "sfc", "snesna"),
     "gba": ("gba",),
-    "megadrive": ("megadrive", "genesis"),
+    "megadrive": ("megadrive", "genesis", "megadrivejp"),
     "gb": ("gb",),
     "gbc": ("gbc",),
-    "fbneo": ("fbneo", "fba", "mame"),
-    "mame": ("mame", "fbneo", "fba"),
+    "fbneo": ("fbneo", "fba"),
+    "mame": ("mame", "mame-advmame"),
+    # ES-DE's own arcade folders. Most cards use `arcade` or `neogeo` rather
+    # than a core's name, and every one of these wants a zipped romset.
+    "arcade": ("arcade", "neogeo", "cps", "cps1", "cps2", "cps3",
+               "consolearcade", "pcarcade"),
+    # Disc systems chdman handles. They were missing, so a .iso in ROMs/saturn
+    # fell through to the PS2 guess and picked up createdvd and hunk 2048,
+    # which are there for NetherSX2 and mean nothing to a Saturn core.
+    "saturn": ("saturn", "saturnjp"),
+    "segacd": ("segacd", "megacd", "megacdjp"),
+    "pcenginecd": ("pcenginecd", "tg-cd"),
+    "neogeocd": ("neogeocd", "neogeocdjp"),
+    "3do": ("3do",),
+    "pcfx": ("pcfx",),
+    # Cartridge systems whose ROMs are plain data, same as SNES.
+    "mastersystem": ("mastersystem", "mark3"),
+    "gamegear": ("gamegear",),
+    "sega32x": ("sega32x", "sega32xjp", "sega32xna"),
+    "pcengine": ("pcengine", "tg16", "supergrafx"),
+    "sg-1000": ("sg-1000",),
     "n64": ("n64",),
     "nds": ("nds",),
     "wiiu": ("wiiu",),
@@ -62,7 +81,9 @@ for _platform, _folders in ESDE_PLATFORM_FOLDERS.items():
 # Platforms that get compressed in the Ayn Thor list
 COMPRESSIBLE_PLATFORMS: frozenset[str] = frozenset({
     "psx", "ps2", "psp", "dreamcast", "gc", "wii", "n3ds", "switch",
-    "snes", "gba", "megadrive", "gb", "gbc", "fbneo", "mame", "wiiu",
+    "snes", "gba", "megadrive", "gb", "gbc", "fbneo", "mame", "arcade", "wiiu",
+    "saturn", "segacd", "pcenginecd", "neogeocd", "3do", "pcfx",
+    "mastersystem", "gamegear", "sega32x", "pcengine", "sg-1000",
 })
 
 

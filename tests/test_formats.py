@@ -222,3 +222,41 @@ def test_each_format_names_its_reverse_after_what_it_actually_does():
     for fmt, modes in FORMAT_MODES.items():
         for info in modes:
             assert info.description != "Open", fmt
+
+
+# ------------------------------------------- the options decide the container
+
+def test_the_arcade_preset_writes_a_zip_that_is_named_zip():
+    """7-Zip was told -tzip while the file was named .7z. FBNeo and MAME look
+    for game.zip, so the romset they wanted was there under a name they never
+    open."""
+    from aynthor.core.presets import PRESETS
+
+    arcade = PRESETS.get("fbneo")
+    assert arcade is not None
+    assert arcade.options.get("archive_type") == "zip"
+
+    out = suggest_output_path(Path("sf2.zip"), CompressionFormat.SEVEN_ZIP,
+                              options=arcade.options)
+    assert out.suffix == ".zip"
+
+
+def test_seven_zip_keeps_7z_when_nothing_says_otherwise():
+    assert suggest_output_path(
+        Path("Super Mario World.sfc"), CompressionFormat.SEVEN_ZIP).suffix == ".7z"
+    assert suggest_output_path(
+        Path("Super Mario World.sfc"), CompressionFormat.SEVEN_ZIP,
+        options={"archive_type": "7z"}).suffix == ".7z"
+
+
+@pytest.mark.parametrize("cso_format, expected", [
+    ("cso1", ".cso"),
+    ("cso2", ".cso"),
+    ("zso", ".zso"),
+    ("dax", ".dax"),
+])
+def test_maxcso_names_the_container_it_was_asked_for(cso_format, expected):
+    """--format=zso with a .cso name is a ZSO file lying about what it is."""
+    out = suggest_output_path(Path("game.iso"), CompressionFormat.CSO,
+                              options={"cso_format": cso_format})
+    assert out.suffix == expected

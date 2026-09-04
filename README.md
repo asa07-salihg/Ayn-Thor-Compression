@@ -63,13 +63,13 @@ The exe is not code-signed, so SmartScreen will warn on first run.
 
 | Format | Systems | Produced by | Why this one |
 |---|---|---|---|
-| **CHD** | PS1, PS2, PSP, Dreamcast | chdman | One file instead of a cue/bin pair, and every mainstream disc emulator reads it |
+| **CHD** | PS1, PS2, PSP, Dreamcast, Saturn, Sega CD, PC Engine CD, Neo Geo CD, 3DO | chdman | One file instead of a cue/bin pair, and every mainstream disc emulator reads it |
 | **RVZ** | GameCube, Wii | DolphinTool | Drops the junk padding Nintendo discs are full of; GCZ and WBFS keep it |
 | **CSO / ZSO** | PSP, PS2 | maxcso | Smaller than CHD on PSP, and PPSSPP reads it natively |
 | **ZCCI** | Nintendo 3DS | rom-converto | The only compressed 3DS format Azahar loads directly |
 | **NSZ / XCZ** | Nintendo Switch | nsz | Recompresses NCA contents while leaving signatures intact, so installers still accept it |
-| **7z** | SNES, GBA, GB, GBC, Mega Drive | 7-Zip | Cartridge ROMs are plain data; RetroArch opens 7z transparently |
-| **ZIP** | FBNeo, MAME | 7-Zip | Those cores expect a zipped romset and will not look inside a 7z |
+| **7z** | SNES, GBA, GB, GBC, Mega Drive, Master System, Game Gear, 32X, PC Engine | 7-Zip | Cartridge ROMs are plain data; RetroArch opens 7z transparently |
+| **ZIP** | Arcade, Neo Geo, CPS, FBNeo, MAME | 7-Zip | Those cores expect a zipped romset and will not look inside a 7z |
 | **WUA** | Wii U | rom-converto | Packs game, update and DLC into one archive Cemu mounts as a single title |
 
 Two steps prepare a file rather than shrink it:

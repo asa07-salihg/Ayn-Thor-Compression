@@ -3,6 +3,33 @@
 Notable changes, newest first. Versions follow
 [semantic versioning](https://semver.org/).
 
+## 1.1.1
+
+- **The ES-DE folder list was missing most of the disc and arcade folders.**
+  Checked against ES-DE's own `es_systems.xml`: nothing it knew was wrong, but
+  `arcade`, `neogeo` and the `cps` folders were unknown, and so were `saturn`,
+  `segacd`, `pcenginecd`, `neogeocd`, `3do` and `pcfx`. A `.iso` in `ROMs/saturn`
+  therefore fell through to the PlayStation 2 guess and picked up `createdvd`
+  and hunk 2048, which are there for NetherSX2 and mean nothing to a Saturn
+  core. Twelve platforms were added, along with `snesna`, `megadrivejp`,
+  `mastersystem`, `gamegear`, `sega32x`, `pcengine` and `sg-1000`. A test now
+  fails if the app lists a folder ES-DE does not ship, or a platform with no
+  preset behind it.
+
+- **The arcade preset was writing a ZIP into a file called `.7z`.** 7-Zip was
+  told `-tzip`, which is right, but the name always came out `.7z`. FBNeo and
+  MAME look for `game.zip` and never open a `.7z`, so the romset was there
+  under a name those cores do not read. maxcso had the same bug: `--format=zso`
+  or `dax` still produced a file called `.cso`. The name now follows the
+  container the options asked for.
+- **The Becomes cell names the container it will actually write.** It showed
+  the format's family name, so a `.cia` said `ZCCI` while the file on disk came
+  out `.zcia`, and an arcade row said `7z / ZIP` for either. It now reads
+  `ZCIA`, `ZIP`, `ZSO` and so on.
+- **A file already in its platform's container is skipped with a reason.** A
+  `.zip` in an arcade folder had nothing to do and would have been queued to
+  write over itself.
+
 ## 1.1.0
 
 - **A file that is already compressed is added as an expand, not a compress.**
@@ -21,11 +48,6 @@ Notable changes, newest first. Versions follow
   first thing a bug report asks for.
 - **Help now opens the changelog** instead of a `docs/` folder.
 - A support link, in the About box and as the repository's Sponsor button.
-- The README screenshots are reproducible: `scripts/make_screenshots.py` builds
-  them from sparse files whose sizes are the media's own capacity or a published
-  figure, and every row is Waiting because nothing was converted to make them.
-  The previous pair had been staged, and said "28 KB" and "saved 3.9 GB" in the
-  same window.
 
 ## 1.0.0
 

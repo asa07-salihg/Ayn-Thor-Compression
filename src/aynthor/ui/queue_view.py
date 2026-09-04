@@ -56,6 +56,14 @@ from aynthor.ui import theme
 _ROLE_PATH = Qt.ItemDataRole.UserRole
 _ROLE_OPTIONS = Qt.ItemDataRole.UserRole + 1
 _ROLE_SORT = Qt.ItemDataRole.UserRole + 2
+
+# Formats whose output container is chosen per row rather than fixed, so the
+# Becomes cell reads the extension instead of the format's family name.
+_NAMED_BY_OUTPUT = frozenset({
+    CompressionFormat.Z3DS,
+    CompressionFormat.CSO,
+    CompressionFormat.SEVEN_ZIP,
+})
 _ROLE_FORMAT = Qt.ItemDataRole.UserRole + 3
 _ROLE_MODE = Qt.ItemDataRole.UserRole + 4
 
@@ -200,11 +208,19 @@ class QueueTable(QTableWidget):
 
             options = self._with_switch_metadata(path, fmt, dict(detected.tool_options))
             mode = natural_mode(path, fmt)
+            output = output_for(path, fmt, mode, settings, options)
+            if mode is ConversionMode.COMPRESS and output == path \
+                    and fmt is not CompressionFormat.NDS_TRIM:
+                # The file is already the container this platform wants. NDS
+                # trim is the exception: it rewrites the cart in place and that
+                # is what it is for.
+                skipped.append(f"{path.name}: already a {path.suffix.lstrip('.')}")
+                continue
             self._append(QueueItem(
                 path=path,
                 format=fmt,
                 mode=mode,
-                output=output_for(path, fmt, mode, settings, options),
+                output=output,
                 tool_options=options,
                 game_group=options.get("game_group", ""),
                 content_type=options.get("content_type", ""),
@@ -361,14 +377,21 @@ class QueueTable(QTableWidget):
 
         info = format_info(fmt) if fmt else None
         becomes = self.item(row, self.COL_BECOMES)
+        output = output_for(path, fmt, mode, self._settings, options) if fmt else path
+
         label = info.label if info else "?"
         if mode == ConversionMode.DECOMPRESS and fmt is not None:
             # The verb belongs to the format: a .7z is unzipped, a .chd is
             # decompressed. "(open)" covered both and said neither.
             label = f"{label} ({self._verb(fmt, mode).lower()})"
+        elif fmt in _NAMED_BY_OUTPUT:
+            # These three write more than one container, and which one depends
+            # on the row's options: a .cia becomes .zcia, the arcade preset
+            # writes .zip, maxcso can write .zso. Showing the format's family
+            # name told a user "ZCCI" while the file on disk said something
+            # else, so the cell shows what will actually be written.
+            label = output.suffix.lstrip(".").upper()
         becomes.setText(label)
-
-        output = output_for(path, fmt, mode, self._settings, options) if fmt else path
         becomes.setData(_ROLE_PATH, output)
         becomes.setToolTip(f"Writes:\n{output}")
         name.setToolTip(f"{path}\n\nWrites:\n{output}")
@@ -580,7 +603,7 @@ def output_for(
     Switch grouping rules are applied."""
     if fmt is None:
         return path
-    suggested = suggest_output_path(path, fmt, mode)
+    suggested = suggest_output_path(path, fmt, mode, options)
     game_group = (options or {}).get("game_group", "")
     if settings.switch_game_subdirs and game_group:
         base = Path(settings.output_dir) if settings.output_dir else path.parent

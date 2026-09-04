@@ -205,6 +205,13 @@ _COMPRESS_SUFFIX = {
     CompressionFormat.WUA: ".wua",
 }
 
+# Two formats let their options pick the container, and the name has to follow.
+# 7-Zip writes a real ZIP when the arcade preset asks for one, and FBNeo and
+# MAME look for `game.zip`; a ZIP called `game.7z` is a romset those cores never
+# find. maxcso is the same story for ZSO and DAX.
+_ARCHIVE_SUFFIX = {"7z": ".7z", "zip": ".zip"}
+_CSO_SUFFIX = {"cso1": ".cso", "cso2": ".cso", "zso": ".zso", "dax": ".dax"}
+
 # A Z3DS container keeps the original container's identity in its extension, so
 # Open can restore the right file without reading the header first.
 _Z3DS_SUFFIX = {".cci": ".zcci", ".3ds": ".zcci", ".cia": ".zcia",
@@ -216,11 +223,17 @@ def suggest_output_path(
     input_path: Path,
     target: CompressionFormat,
     mode: ConversionMode = ConversionMode.COMPRESS,
+    options: dict | None = None,
 ) -> Path:
-    """Where the result should land, before output-folder and conflict rules."""
+    """Where the result should land, before output-folder and conflict rules.
+
+    `options` are the row's tool options, because for 7-Zip and maxcso they are
+    what decides which container gets written, and the extension has to say so.
+    """
     if mode == ConversionMode.DECOMPRESS:
         return _decompressed_path(input_path, target)
 
+    options = options or {}
     ext = input_path.suffix.lower()
     if target == CompressionFormat.NDS_TRIM:
         # ndstrim rewrites the cart in place; there is no second file.
@@ -233,6 +246,12 @@ def suggest_output_path(
         return input_path.with_suffix(_Z3DS_SUFFIX.get(ext, ".z3ds"))
     if target == CompressionFormat.NSZ:
         return input_path.with_suffix(_NSZ_SUFFIX.get(ext, ".nsz"))
+    if target == CompressionFormat.SEVEN_ZIP:
+        return input_path.with_suffix(
+            _ARCHIVE_SUFFIX.get(options.get("archive_type", "7z"), ".7z"))
+    if target == CompressionFormat.CSO:
+        return input_path.with_suffix(
+            _CSO_SUFFIX.get(options.get("cso_format", "cso1"), ".cso"))
     return input_path.with_suffix(_COMPRESS_SUFFIX.get(target, ".out"))
 
 

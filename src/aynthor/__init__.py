@@ -5,7 +5,7 @@ one edit rather than a search across the README, the issue templates, the About
 box and the updater.
 """
 
-__version__ = "1.1.0"
+__version__ = "1.1.1"
 
 # The GitHub repository this build updates itself from. Nothing else in the
 # code hardcodes an address for this project.
