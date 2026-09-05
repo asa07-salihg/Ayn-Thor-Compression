@@ -9,6 +9,47 @@ Changes that are on `main` but not in a release yet. Cutting a version
 renames this heading to that version, so an entry can never end up filed
 under a tag it did not ship in.
 
+### Security
+
+A pass over every trust boundary in the app: what crosses it, and what checks it.
+
+- **An imported list could choose where the converter wrote.** The Switch
+  grouping folder is the game name, and for an imported list that name is a
+  line from a text file somebody handed the user. `../../../Startup` walked out
+  of the output folder, and on Windows `C:/Windows/Temp` replaced it outright,
+  because joining an absolute path discards everything to its left. The name is
+  reduced to one folder component now.
+- **The app left a permanent copy of your `prod.keys`.** nsz reads its keys
+  from its working directory, so the file was copied to the app's data folder
+  as `keys.txt` and never removed. It exists for the length of one conversion
+  now and is deleted afterwards, including when the conversion fails.
+- **The 7z extractor fell back to whatever was first on `PATH`.** That is an
+  unverified executable, run to unpack the archives every other tool arrives
+  in. Only the verified copy runs; a test fails if `shutil.which` reappears.
+- **A ROM named like an option was one.** The converters take files as
+  positional arguments and none supports `--`, so a file called `-o` reached
+  chdman's command line as a flag. Every path is absolute before it gets there.
+- **A file could expand until the disk filled.** The Z3DS decoder wrote until
+  the input ran out and compared the size afterwards; a four-byte field could
+  also ask for a four gigabyte allocation. Both are bounded by what the
+  container itself declares.
+- **The conflict policy was skipped whenever a converter re-derived the output
+  name.** Opening a generic `.z3ds` took its extension from the header, and the
+  CIA to CCI step wrote a path nobody had checked, so `Skip` could still
+  destroy an existing file. Both refuse instead.
+- **The 3DS tools were staged by file size.** They are copied to a fixed,
+  user-writable folder and run from there, so anything of the right length sat
+  in it forever and no amount of verifying `tools/` noticed. Compared by
+  content now.
+- **Delete-source proved an output existed, not that this run wrote it.** With
+  overwrite selected a leftover from an earlier run satisfied every guard.
+- **Archives are bounded before extraction**, which happens before the archive
+  has been hashed, and the updater refuses a checksum that is not 64 hex
+  characters, an asset listed twice with different hashes, and an install path
+  a batch file cannot carry.
+
+### Other
+
 - **Output path rules moved into `core`.** They decide where a converted file
   lands and they touch no Qt, but they lived in the queue widget, so the tests
   for them had to import a widget module and the engine suite, which CI runs

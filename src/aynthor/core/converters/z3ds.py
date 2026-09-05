@@ -128,6 +128,15 @@ class Z3dsConverter(BaseConverter):
             output = output.with_suffix(container.original_extension(job.input_path, header))
         if output.resolve() == job.input_path.resolve():
             output = output.with_name(f"{output.stem}-decompressed{output.suffix}")
+        if output != job.output_path and output.exists():
+            # The conflict policy was applied to the path the queue predicted.
+            # This one comes from the header of the file being opened, so it
+            # was never checked, and both engines below write with overwrite
+            # already on: a `.z3ds` claiming CIA magic destroyed the user's
+            # `Game.cia` with Skip selected.
+            return False, (f"{output.name} already exists. This file expands to that "
+                           "name, which the conflict policy never saw, so nothing "
+                           "was written.")
         job.output_path = output
 
         converto = tool_path("rom-converto")

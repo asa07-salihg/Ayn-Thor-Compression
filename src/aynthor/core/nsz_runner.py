@@ -27,6 +27,8 @@ from __future__ import annotations
 import os
 import shutil
 import sys
+from collections.abc import Iterator
+from contextlib import contextmanager, suppress
 from pathlib import Path
 
 from aynthor.core.runtime import is_frozen
@@ -56,11 +58,37 @@ def nsz_command() -> tuple[list[str], Path, dict[str, str]]:
     )
 
 
-def stage_keys(keys_file: Path, workdir: Path) -> None:
-    """Copy prod.keys into the nsz working directory as keys.txt."""
+@contextmanager
+def staged_keys(keys_file: Path, workdir: Path) -> Iterator[None]:
+    """Put keys.txt where nsz will find it, for exactly as long as the run.
+
+    Why
+        nsz reads keys.txt from its working directory, so the file has to be
+        copied there. What it must not do is stay there: this used to leave a
+        second permanent copy of the user's console keys in the app's data
+        folder, where nothing would ever remove it and the user had no reason
+        to look. The keys are the most sensitive file this app touches and
+        SECURITY.md promises they are only read, so the copy exists for the
+        length of one conversion and is deleted afterwards, including when the
+        conversion fails.
+
+        A keys file the user pointed at directly is left alone: it is theirs,
+        it was already there, and deleting it would destroy it.
+    """
     target = workdir / "keys.txt"
-    if not target.is_file() or keys_file.resolve() != target.resolve():
-        shutil.copy2(keys_file, target)
+    if keys_file.resolve() == target.resolve():
+        yield
+        return
+
+    workdir.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(keys_file, target)
+    try:
+        yield
+    finally:
+        # Leaving it behind is the thing being fixed, but failing a conversion
+        # over a cleanup error would be perverse, so a locked file is tolerated.
+        with suppress(OSError):
+            target.unlink(missing_ok=True)
 
 
 def run_nsz_cli(args: list[str]) -> int:

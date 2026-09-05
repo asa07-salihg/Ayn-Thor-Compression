@@ -60,10 +60,34 @@ def test_digest_is_found_by_asset_name():
     assert digest.startswith("9f86d081")
 
 
+DIGEST = "a" * 64
+OTHER = "b" * 64
+
+
 def test_a_leading_star_from_binary_mode_is_ignored():
     """sha256sum writes `hash *name` in binary mode."""
-    text = "abc123  *AynThorCompression.exe\n"
-    assert updates._expected_digest(text, "AynThorCompression.exe") == "abc123"
+    text = f"{DIGEST}  *AynThorCompression.exe\n"
+    assert updates._expected_digest(text, "AynThorCompression.exe") == DIGEST
+
+
+def test_a_hash_that_is_not_a_sha256_is_refused():
+    """It could never match a real digest, so accepting it only turned a
+    malformed checksum file into a confusing mismatch."""
+    with pytest.raises(updates.UpdateError, match="not a SHA-256"):
+        updates._expected_digest("abc123  AynThorCompression.exe\n",
+                                 "AynThorCompression.exe")
+
+
+def test_the_asset_listed_twice_with_different_hashes_is_refused():
+    """Taking the first silently picks one of two answers."""
+    text = f"{DIGEST}  AynThorCompression.exe\n{OTHER}  AynThorCompression.exe\n"
+    with pytest.raises(updates.UpdateError, match="more than once"):
+        updates._expected_digest(text, "AynThorCompression.exe")
+
+
+def test_the_same_hash_listed_twice_is_fine():
+    text = f"{DIGEST}  AynThorCompression.exe\n{DIGEST}  *AynThorCompression.exe\n"
+    assert updates._expected_digest(text, "AynThorCompression.exe") == DIGEST
 
 
 def test_a_missing_asset_is_an_error_not_a_pass():
@@ -193,3 +217,39 @@ def test_the_checksum_file_names_the_asset_without_a_directory(tmp_path: Path):
     line = build_exe.CHECKSUMS.read_text(encoding="utf-8").strip()
     assert line.endswith(f"  {RELEASE_ASSET}")
     assert "/" not in line and "\\" not in line
+
+
+# ------------------------------------- the swap script is a batch file
+
+@pytest.mark.parametrize("bad", ["%", '"', "\r", "\n"])
+def test_a_path_batch_cannot_carry_is_refused(bad, tmp_path, monkeypatch):
+    """`%` is legal in a Windows folder name and is variable expansion to cmd,
+    so an install under `C:\\%Games%\\` set TARGET to something else entirely
+    and the script moved the wrong file, or nothing."""
+    import sys
+
+    from aynthor.core import runtime
+
+    folder = tmp_path / f"a{bad}b"
+    exe = folder / "AynThorCompression.exe"
+    monkeypatch.setattr(runtime, "is_frozen", lambda: True)
+    monkeypatch.setattr(updates, "is_frozen", lambda: True)
+    monkeypatch.setattr(sys, "executable", str(exe))
+
+    with pytest.raises(updates.UpdateError, match="cannot be updated automatically"):
+        updates.apply_update(tmp_path / "new.exe")
+
+
+def test_an_ordinary_path_is_not_refused(tmp_path, monkeypatch):
+    """The guard must not stop a normal install from updating."""
+    import sys
+
+    monkeypatch.setattr(updates, "is_frozen", lambda: True)
+    monkeypatch.setattr(sys, "executable", str(tmp_path / "AynThorCompression.exe"))
+    started: list[list[str]] = []
+    monkeypatch.setattr(updates.subprocess, "Popen",
+                        lambda cmd, **_kw: started.append(cmd))
+
+    updates.apply_update(tmp_path / "new.exe")
+    assert started, "the swap script should have been launched"
+    assert (tmp_path / "aynthor-update.cmd").is_file()

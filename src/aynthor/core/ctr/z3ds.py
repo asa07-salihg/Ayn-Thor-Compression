@@ -53,6 +53,15 @@ _SKIPPABLE_MAGIC = 0x184D2A50
 _SKIPPABLE_MASK = 0xFFFFFFF0
 _SEEKABLE_MAGIC = 0x8F92EAB1
 _SEEK_FOOTER_SIZE = 9
+_TOO_LARGE = (
+    "This file expands to more than its own header says it should, so it was "
+    "stopped and the partial output removed."
+)
+
+# Only used when a container declares no size at all. A 3DS cart tops out at
+# 4 GB, so anything past this is not a ROM whatever the header claims.
+_MAX_DECOMPRESSED = 8 * 1024**3
+
 _READ_CHUNK = 4 * 1024 * 1024
 
 # Container extension -> extension of the ROM inside it.
@@ -212,14 +221,31 @@ def decompress(
             entries = _read_seek_table(src, header.payload_offset, file_size)
             src.seek(header.payload_offset)
 
+            # The header says how large the original was, and nothing may
+            # exceed it. Both loops used to write until the input ran out: a
+            # few hundred KB of crafted zstd expands to hundreds of gigabytes,
+            # and the size was only compared afterwards, by which time the
+            # disk was full. `total` is the contract the container itself
+            # states, so it is also the limit.
+            limit = total or _MAX_DECOMPRESSED
+
             if entries:
+                available = file_size - header.payload_offset
                 for compressed_size, decompressed_size in entries:
+                    if compressed_size > available:
+                        # A four byte field can claim four gigabytes, and
+                        # `read` allocates before anything checks the result.
+                        raise Z3dsError(
+                            "Seek table claims a frame larger than the file.")
                     frame = src.read(compressed_size)
                     if len(frame) != compressed_size:
                         raise Z3dsError("Compressed data ends early (file truncated).")
-                    block = dctx.decompress(frame, max_output_size=decompressed_size)
-                    dst.write(block)
+                    block = dctx.decompress(
+                        frame, max_output_size=min(decompressed_size, limit - written + 1))
                     written += len(block)
+                    if written > limit:
+                        raise Z3dsError(_TOO_LARGE)
+                    dst.write(block)
                     report()
             else:
                 # No usable seek table: stream every frame instead.
@@ -228,8 +254,10 @@ def decompress(
                     block = reader.read(_READ_CHUNK)
                     if not block:
                         break
-                    dst.write(block)
                     written += len(block)
+                    if written > limit:
+                        raise Z3dsError(_TOO_LARGE)
+                    dst.write(block)
                     report()
     except Z3dsError:
         _cleanup(destination)

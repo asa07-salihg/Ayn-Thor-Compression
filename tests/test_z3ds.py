@@ -163,3 +163,31 @@ def test_generic_container_recognises_a_cia_by_its_first_byte(tmp_path: Path):
     source = build_container(tmp_path / "game.z3ds", underlying=b"\x20\x20\x00\x00")
     header = z3ds.read_header(source)
     assert z3ds.original_extension(source, header) == ".cia"
+
+
+# --------------------------------------------- the decoder must be bounded
+
+def test_a_container_cannot_expand_past_the_size_it_declares(tmp_path):
+    """A few hundred KB of crafted zstd expanded to hundreds of gigabytes: the
+    stream was written until the input ran out and the size was only compared
+    afterwards, by which time the disk was full."""
+    import zstandard
+
+    from aynthor.core.ctr import z3ds
+
+    payload = b"\0" * (4 * 1024 * 1024)
+    compressed = zstandard.ZstdCompressor().compress(payload)
+
+    source = tmp_path / "bomb.z3ds"
+    # A header that understates the size, and no seek table, so the streaming
+    # branch runs.
+    header = b"Z3DS" + struct.pack(
+        "<4sBBHIQQ", b"NCSD", 1, 0, z3ds.HEADER_SIZE, 0,
+        len(compressed), 1024,
+    )
+    source.write_bytes(header + compressed)
+
+    destination = tmp_path / "out.cci"
+    with pytest.raises(z3ds.Z3dsError, match="expands to more"):
+        z3ds.decompress(source, destination)
+    assert not destination.exists(), "the partial output must be removed"

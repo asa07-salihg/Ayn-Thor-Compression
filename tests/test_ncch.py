@@ -11,6 +11,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from aynthor.core.ctr import ncch
 from conftest import write_ncch, write_ncsd
 
@@ -60,3 +62,47 @@ def test_file_too_short_reports_none(tmp_path: Path):
 
 def test_missing_file_reports_none(tmp_path: Path):
     assert ncch.is_encrypted(tmp_path / "nothing.cci") is None
+
+
+# ------------------------------------------------- keys are staged, not kept
+
+def test_the_keys_copy_does_not_outlive_the_conversion(tmp_path):
+    """The keys are the most sensitive file this app touches. A second copy
+    used to be left in the app's data folder, where nothing removed it and the
+    user had no reason to look."""
+    from aynthor.core.nsz_runner import staged_keys
+
+    keys = tmp_path / "prod.keys"
+    keys.write_text("secret = 00112233\n", encoding="utf-8")
+    workdir = tmp_path / "work"
+
+    with staged_keys(keys, workdir):
+        assert (workdir / "keys.txt").is_file(), "nsz needs it during the run"
+    assert not (workdir / "keys.txt").exists()
+    assert keys.is_file(), "the user's own file is theirs and stays"
+
+
+def test_the_keys_copy_is_removed_even_when_the_run_fails(tmp_path):
+    from aynthor.core.nsz_runner import staged_keys
+
+    keys = tmp_path / "prod.keys"
+    keys.write_text("secret\n", encoding="utf-8")
+    workdir = tmp_path / "work"
+
+    with pytest.raises(RuntimeError), staged_keys(keys, workdir):
+        raise RuntimeError("the converter fell over")
+    assert not (workdir / "keys.txt").exists()
+
+
+def test_a_keys_file_the_user_pointed_at_directly_is_never_deleted(tmp_path):
+    """Deleting it would destroy the user's own keys."""
+    from aynthor.core.nsz_runner import staged_keys
+
+    workdir = tmp_path / "work"
+    workdir.mkdir()
+    keys = workdir / "keys.txt"
+    keys.write_text("secret\n", encoding="utf-8")
+
+    with staged_keys(keys, workdir):
+        pass
+    assert keys.is_file()

@@ -376,6 +376,34 @@ def test_switching_format_does_not_carry_the_old_format_settings(app, tmp_path):
     assert "codec" not in after   # the RVZ keys are gone too
 
 
+def test_a_stale_output_does_not_authorise_deleting_the_source(app, tmp_path):
+    """With the conflict policy on overwrite a row is not skipped when its
+    output already exists, so a leftover from an earlier run satisfied every
+    other guard on its own. A converter exiting zero without writing anything
+    would then have deleted the source against somebody else's file."""
+    from aynthor.core.models import CompressionFormat, ConversionJob
+    from aynthor.ui.job_runner import JobRunner
+
+    source = tmp_path / "game.iso"
+    source.write_bytes(b"\0" * 2048)
+    stale = tmp_path / "game.chd"
+    stale.write_bytes(b"\0" * 2048)
+
+    job = ConversionJob(
+        input_path=source, output_path=stale,
+        format=CompressionFormat.CHD, options={}, input_size=2048,
+    )
+    runner = JobRunner([])
+
+    # Pretend the run started after the output was last written.
+    assert runner._delete_source(job, started_at=stale.stat().st_mtime + 60) is False
+    assert source.is_file(), "the source must survive"
+
+    # And a genuine output, written during the run, still allows it.
+    assert runner._delete_source(job, started_at=stale.stat().st_mtime - 60) is True
+    assert not source.exists()
+
+
 def test_switching_theme_repaints_instead_of_leaving_half_the_window_behind(app):
     from aynthor.ui.main_window import MainWindow
     from aynthor.ui.theme import Mode, apply_theme, is_dark

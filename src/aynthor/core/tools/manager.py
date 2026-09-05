@@ -59,6 +59,12 @@ Progress = Callable[[str], None]
 
 _CHUNK = 256 * 1024
 
+# What a converter release plausibly contains. Both are bounds on an archive
+# that has not been verified yet, so they are deliberately generous: the point
+# is to refuse a bomb, not to police upstream packaging.
+_MAX_MEMBERS = 10_000
+_MAX_UNPACKED = 4 * 1024**3
+
 # Path components an archive has no business containing. Any of them means the
 # entry is trying to escape the directory it is being unpacked into.
 _UNSAFE_PARTS = {"..", ""}
@@ -282,18 +288,38 @@ class ToolsManager:
 
     def _extract_zip(self, archive: Path, into: Path) -> None:
         with zipfile.ZipFile(archive) as opened:
-            for info in opened.infolist():
+            members = opened.infolist()
+            # The archive itself is never hashed -- only what comes out of it
+            # is -- so extraction happens before anything has been verified.
+            # A 512 MB download is about a petabyte of deflate, and the
+            # cleanup that removes the scratch directory only runs afterwards.
+            if len(members) > _MAX_MEMBERS:
+                raise ToolError(
+                    f"Archive holds {len(members)} entries, more than the "
+                    f"{_MAX_MEMBERS} a converter release ever should.")
+            declared = sum(info.file_size for info in members)
+            if declared > _MAX_UNPACKED:
+                raise ToolError(
+                    f"Archive unpacks to {declared / 1e9:.1f} GB, over the "
+                    f"{_MAX_UNPACKED / 1e9:.0f} GB limit.")
+            for info in members:
                 if not info.is_dir():
                     self._check_member_name(info.filename)
             opened.extractall(into)
 
     def _extract_7z(self, archive: Path, into: Path) -> None:
+        # Only the verified copy. This used to fall back to whatever `7zr` or
+        # `7z` was first on PATH, which is an executable nobody checked, run to
+        # unpack the archives every other tool arrives in. PATH on Windows
+        # routinely includes directories the user's other software can write
+        # to, so that fallback undid the guarantee the whole install path is
+        # built on. If the bootstrap is missing it is downloaded and hashed
+        # like everything else.
         seven_zr = self.tools_root / "7zr.exe"
         if not seven_zr.is_file():
-            found = shutil.which("7zr") or shutil.which("7z")
-            if not found:
-                raise ToolError("7zr is needed to unpack this archive and is not installed.")
-            seven_zr = Path(found)
+            raise ToolError(
+                "The verified 7zr is not installed, and no other copy is trusted "
+                "to unpack this. Install the tools again from the Tools window.")
         result = subprocess.run(
             [str(seven_zr), "x", str(archive), f"-o{into}", "-y"],
             capture_output=True, text=True, check=False, **no_window_kwargs(),

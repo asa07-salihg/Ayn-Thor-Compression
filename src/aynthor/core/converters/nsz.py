@@ -25,7 +25,7 @@ from pathlib import Path
 
 from aynthor.core.converters.base import BaseConverter, failure, is_decompress
 from aynthor.core.models import CompressionFormat, ConversionJob
-from aynthor.core.nsz_runner import nsz_command, stage_keys
+from aynthor.core.nsz_runner import nsz_command, staged_keys
 from aynthor.core.system import find_prod_keys, run_tool
 
 _ALREADY_COMPRESSED = {".nsz", ".xcz"}
@@ -53,13 +53,12 @@ class NszConverter(BaseConverter):
             return False, "Open works on .nsz and .xcz. Use Compress for .nsp and .xci."
 
         command, workdir, extra_env = nsz_command()
-        stage_keys(keys_file, workdir)
-
         args = self._decompress_args(job) if decompressing else self._compress_args(job)
-        result = run_tool(
-            command[0], [*command[1:], *args],
-            cwd=workdir, env=extra_env, on_output=self.emit,
-        )
+        with staged_keys(keys_file, workdir):
+            result = run_tool(
+                command[0], [*command[1:], *args],
+                cwd=workdir, env=extra_env, on_output=self.emit,
+            )
         return (True, "NSZ done.") if result.returncode == 0 else failure(result)
 
     @staticmethod

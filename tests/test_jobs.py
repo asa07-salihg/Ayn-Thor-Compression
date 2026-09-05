@@ -190,3 +190,83 @@ def test_changing_a_row_format_drops_the_previous_format_options():
     assert rvz is not None and seven is not None
     assert rvz.format is CompressionFormat.RVZ
     assert rvz.options["level"] != seven.options["level"]
+
+
+# ------------------------------------------------ nothing reaches a tool relative
+
+def test_every_path_a_converter_gets_is_absolute(tmp_path, monkeypatch):
+    """The converters take files as positional arguments and none of them
+    supports `--`. A relative path is one rename away from being read as a
+    flag: a ROM called `-o` would reach chdman's command line as an option."""
+    from aynthor.core.jobs import build_jobs
+    from aynthor.core.models import CompressionFormat, ConversionMode, QueueItem
+    from aynthor.core.settings import FormatSettings
+
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "-o").write_bytes(b"\0" * 16)
+
+    item = QueueItem(
+        path=Path("-o"),
+        format=CompressionFormat.CHD,
+        mode=ConversionMode.COMPRESS,
+        output=Path("-o.chd"),
+    )
+    jobs = build_jobs([(0, item)], FormatSettings())
+    assert jobs, "the row should still be queued; only its paths change"
+    for _row, job in jobs:
+        assert job.input_path.is_absolute()
+        assert job.output_path.is_absolute()
+        assert not str(job.input_path).startswith("-")
+        assert not str(job.output_path).startswith("-")
+
+
+# ------------------------------------ a list file must not choose a directory
+
+@pytest.mark.parametrize("hostile", [
+    "../../../../Users/Public/Start Menu",
+    "C:/Windows/Temp",
+    r"..\..\evil",
+    "..",
+    ".",
+    "   ",
+    "",
+])
+def test_a_grouping_name_cannot_escape_the_output_folder(tmp_path, hostile):
+    """`game_group` comes out of an imported list, which is a text file
+    somebody handed the user. Unreduced it chose where the converter wrote:
+    a relative name walked out, and on Windows an absolute one replaced the
+    output folder outright, because joining an absolute path discards
+    everything to its left."""
+    from aynthor.core.models import CompressionFormat, ConversionMode
+    from aynthor.core.output import output_for
+    from aynthor.core.settings import FormatSettings
+
+    out = tmp_path / "out"
+    settings = FormatSettings(output_dir=str(out), switch_game_subdirs=True)
+    result = output_for(tmp_path / "game.nsp", CompressionFormat.NSZ,
+                        ConversionMode.COMPRESS, settings,
+                        {"game_group": hostile})
+
+    assert out in result.parents, f"{hostile!r} escaped to {result}"
+    assert ".." not in result.parts
+
+
+def test_an_ordinary_game_name_still_gets_its_folder(tmp_path):
+    from aynthor.core.models import CompressionFormat, ConversionMode
+    from aynthor.core.output import output_for
+    from aynthor.core.settings import FormatSettings
+
+    out = tmp_path / "out"
+    settings = FormatSettings(output_dir=str(out), switch_game_subdirs=True)
+    result = output_for(tmp_path / "game.nsp", CompressionFormat.NSZ,
+                        ConversionMode.COMPRESS, settings,
+                        {"game_group": "Mario Kart 8 Deluxe"})
+    assert result.parent == out / "Mario Kart 8 Deluxe"
+
+
+@pytest.mark.parametrize("reserved", ["CON", "NUL", "com1", "LPT9.txt"])
+def test_a_windows_device_name_is_not_used_as_a_folder(reserved):
+    """Opening one of these hangs or talks to hardware rather than a file."""
+    from aynthor.core.output import safe_folder_name
+
+    assert safe_folder_name(reserved).startswith("_")

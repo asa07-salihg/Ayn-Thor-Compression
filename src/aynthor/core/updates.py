@@ -129,12 +129,32 @@ def _download(url: str, destination: Path, on_progress: Callable[[int], None] | 
 
 
 def _expected_digest(checksum_text: str, asset_name: str) -> str:
-    """Pull one file's hash out of a `sha256  filename` listing."""
+    """Pull one file's hash out of a `sha256  filename` listing.
+
+    The value has to look like a SHA-256 and the file has to be listed once.
+    A token that is not 64 hex characters could never match a real digest, so
+    accepting it only turned a malformed checksum file into a confusing
+    mismatch; two differing entries for the same asset is worse, because taking
+    the first silently picks one of two answers.
+    """
+    found: list[str] = []
     for line in checksum_text.splitlines():
         parts = line.split()
         if len(parts) >= 2 and parts[-1].lstrip("*") == asset_name:
-            return parts[0].lower()
-    raise UpdateError(f"{asset_name} is not listed in {CHECKSUM_ASSET}.")
+            found.append(parts[0].lower())
+
+    if not found:
+        raise UpdateError(f"{asset_name} is not listed in {CHECKSUM_ASSET}.")
+    if len(set(found)) > 1:
+        raise UpdateError(
+            f"{CHECKSUM_ASSET} lists {asset_name} more than once, with different "
+            "hashes. Nothing was installed.")
+    digest = found[0]
+    if not _SHA256_RE.fullmatch(digest):
+        raise UpdateError(
+            f"The hash listed for {asset_name} is not a SHA-256. Nothing was "
+            "installed.")
+    return digest
 
 
 def _sha256(path: Path) -> str:
@@ -185,6 +205,11 @@ def download_verified(release: Release,
 # The replacement script. Windows holds a lock on a running exe, so this waits
 # for the process to go away before touching it, keeps the old build as .old
 # until the new one has started, and deletes itself last.
+# Characters the replacement script cannot carry through a batch variable.
+_UNSCRIPTABLE = ('%', '"', '\r', '\n')
+
+_SHA256_RE = re.compile(r"[0-9a-f]{64}")
+
 _SWAP_SCRIPT = """@echo off
 setlocal
 set "TARGET={target}"
@@ -220,9 +245,22 @@ def apply_update(download: Path) -> None:
             "Use `git pull` instead.")
 
     target = Path(sys.executable).resolve()
+    new = download.resolve()
+    for path in (target, new):
+        # `%` is legal in a Windows folder name and is variable expansion to
+        # cmd, so an install under `C:\%Games%\` would set TARGET to something
+        # else entirely and the script would move the wrong file, or nothing.
+        # Escaping is not enough for a quote, which cannot appear in a path
+        # anyway, so both are simply refused with a reason.
+        if any(ch in str(path) for ch in _UNSCRIPTABLE):
+            raise UpdateError(
+                f"This folder cannot be updated automatically because its path "
+                f"contains one of {' '.join(_UNSCRIPTABLE)}:\n  {path}\n"
+                "Download the new version and replace the file by hand.")
+
     script = target.parent / "aynthor-update.cmd"
     script.write_text(
-        _SWAP_SCRIPT.format(target=target, new=download.resolve()),
+        _SWAP_SCRIPT.format(target=target, new=new),
         encoding="utf-8",
     )
 

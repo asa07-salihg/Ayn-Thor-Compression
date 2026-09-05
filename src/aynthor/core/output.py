@@ -27,6 +27,20 @@ from aynthor.core.formats import suggest_output_path
 from aynthor.core.models import CompressionFormat, ConversionMode
 from aynthor.core.settings import FormatSettings
 
+# Path separators, the drive colon, and the rest of what Windows refuses in a
+# file name. Any of them means the text was never a single folder name.
+_FORBIDDEN_IN_NAME = frozenset('/\\:*?"<>|\0')
+
+# CON, PRN and friends are devices, not files: opening one hangs or writes to
+# hardware. Windows refuses them with any extension, so the stem is checked.
+_RESERVED_ON_WINDOWS = frozenset(
+    {"CON", "PRN", "AUX", "NUL"}
+    | {f"COM{i}" for i in range(1, 10)}
+    | {f"LPT{i}" for i in range(1, 10)}
+)
+
+_MAX_NAME = 120
+
 
 def output_for(
     path: Path,
@@ -50,11 +64,39 @@ def output_for(
     game_group = (options or {}).get("game_group", "")
 
     base = _destination(settings, platform, path)
-    if settings.switch_game_subdirs and game_group:
-        return (base or path.parent) / game_group / suggested.name
+    folder = safe_folder_name(game_group)
+    if settings.switch_game_subdirs and folder:
+        return (base or path.parent) / folder / suggested.name
     if base:
         return base / suggested.name
     return suggested
+
+
+def safe_folder_name(name: str) -> str:
+    """One folder name, or "" when the text cannot be one.
+
+    Why
+        The Switch grouping folder is the game name, and for an imported list
+        that name is a line out of a text file somebody handed the user. Left
+        alone it decides where the converter writes: `../../../Startup` walks
+        out of the output folder, and on Windows `C:/Windows/Temp` replaces it
+        outright, because joining an absolute path discards everything to its
+        left. The converter then writes there with overwrite already on.
+
+        So the text is reduced to a single component. Separators and the drive
+        colon are replaced rather than stripped, because stripping `..` out of
+        `....//` leaves `..` again; the characters Windows forbids in a name go
+        with them, and a name that is only dots is refused outright.
+    """
+    cleaned = "".join("_" if ch in _FORBIDDEN_IN_NAME else ch for ch in name).strip()
+    # A trailing dot or space is legal to create and impossible to open on
+    # Windows, and NTFS streams hide behind a colon, which is already replaced.
+    cleaned = cleaned.rstrip(". ")
+    if not cleaned or cleaned in {".", ".."} or set(cleaned) <= {"."}:
+        return ""
+    if cleaned.upper().split(".")[0] in _RESERVED_ON_WINDOWS:
+        return f"_{cleaned}"
+    return cleaned[:_MAX_NAME]
 
 
 @lru_cache(maxsize=8)

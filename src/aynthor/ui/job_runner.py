@@ -24,10 +24,17 @@ Reference
 
 from __future__ import annotations
 
+import time
+
 from PySide6.QtCore import QThread, Signal
 
 from aynthor.core.converters.registry import get_converter
 from aynthor.core.models import ConversionJob
+
+# Some filesystems record whole seconds, and a fast conversion can finish
+# inside one, so a small allowance keeps a genuine output from being mistaken
+# for a stale one.
+_CLOCK_MARGIN = 2.0
 
 
 class JobRunner(QThread):
@@ -60,6 +67,7 @@ class JobRunner(QThread):
                 continue
 
             converter.on_progress = lambda pct, r=row: self.job_progress.emit(r, pct)
+            started_at = time.time()
             try:
                 ok, message = converter.convert(job)
             except Exception as exc:  # noqa: BLE001 - a crash here must not take the app with it
@@ -75,7 +83,7 @@ class JobRunner(QThread):
                 job.output_size = 0
 
             if ok and job.options.get("delete_source"):
-                removed = self._delete_source(job)
+                removed = self._delete_source(job, started_at)
                 if removed:
                     message = f"{message} Source deleted."
 
@@ -83,20 +91,32 @@ class JobRunner(QThread):
             job.message = message
             self.job_finished.emit(row, job, ok, message)
 
-    def _delete_source(self, job: ConversionJob) -> bool:
+    def _delete_source(self, job: ConversionJob, started_at: float) -> bool:
         """Remove the input, but only when there is provably something to keep.
 
-        Three conditions, all of them because this destroys the user's ROM: the
+        Four conditions, all of them because this destroys the user's ROM: the
         job reported success, the output is a different file from the input
-        (NDS trim rewrites in place), and that output exists and is not empty.
-        A converter that exits zero having written nothing is rare but it has
-        happened, and the cost of getting this wrong is unrecoverable.
+        (NDS trim rewrites in place), that output exists and is not empty, and
+        it was written by this run.
+
+        The last one is the difference between "an output exists" and "this
+        conversion produced one". With the conflict policy on overwrite a row
+        is not skipped when its output is already there, so a leftover from an
+        earlier run satisfied the other three on its own: a converter that
+        exited zero without writing anything -- the exact case this guards
+        against -- would then have deleted the source against somebody else's
+        file. The margin absorbs a filesystem whose timestamps are coarse.
         """
         try:
             if job.output_path.resolve() == job.input_path.resolve():
                 return False
             if not job.output_path.is_file() or job.output_path.stat().st_size == 0:
                 self.log.emit(f"Kept {job.input_path.name}: the output looks empty.")
+                return False
+            if job.output_path.stat().st_mtime < started_at - _CLOCK_MARGIN:
+                self.log.emit(
+                    f"Kept {job.input_path.name}: {job.output_path.name} was already "
+                    "there and this run did not write it.")
                 return False
             job.input_path.unlink()
             return True

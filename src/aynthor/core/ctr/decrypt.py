@@ -27,12 +27,15 @@ Reference
 
 from __future__ import annotations
 
+import hashlib
 import re
 import shutil
 from collections.abc import Callable
 from pathlib import Path
 
 from aynthor.core.system import app_data_dir, run_tool, tools_dir
+
+_HASH_CHUNK = 256 * 1024
 
 Emit = Callable[[str], None]
 
@@ -80,6 +83,14 @@ def tools_ready() -> bool:
     return not missing_tools()
 
 
+def _digest(path: Path) -> str:
+    handle = hashlib.sha256()
+    with path.open("rb") as opened:
+        for chunk in iter(lambda: opened.read(_HASH_CHUNK), b""):
+            handle.update(chunk)
+    return handle.hexdigest()
+
+
 def _stage_tools(dest: Path) -> None:
     tools = tools_dir()
     for name in REQUIRED_TOOLS:
@@ -87,7 +98,13 @@ def _stage_tools(dest: Path) -> None:
         if not src.is_file():
             raise DecryptError(f"{name} not found. Download the 3DS Decryptor from Tools.")
         target = dest / name
-        if not target.is_file() or target.stat().st_size != src.stat().st_size:
+        # Compared by content, not by size. This directory is a fixed,
+        # user-writable path and the tools are executed from it, so a stale
+        # copy from an older pin -- or anything of the right length dropped
+        # there -- used to run forever, and no amount of verifying `tools/`
+        # would notice. The verified copy is the only one allowed to survive.
+        if not target.is_file() or _digest(target) != _digest(src):
+            target.unlink(missing_ok=True)
             shutil.copy2(src, target)
 
 
@@ -212,6 +229,12 @@ def decrypt_cia(rom: Path, output: Path, emit: Emit, *, to_cci: bool = False) ->
 
         if to_cci and is_game:
             cci_out = output.with_suffix(".cci")
+            if cci_out.exists():
+                # The conflict policy was applied to `output`, never to this.
+                # Writing here anyway overwrote a file the user had, with Skip
+                # selected, and then deleted the one the policy did approve.
+                emit(f"{cci_out.name} already exists; keeping the decrypted CIA.")
+                return output
             emit("Converting to CCI...")
             run_tool(work / "makerom.exe", ["-ciatocci", str(output), "-o", str(cci_out)], cwd=work)
             if cci_out.is_file():

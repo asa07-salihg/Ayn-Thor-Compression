@@ -465,3 +465,60 @@ def test_the_entry_with_no_checksum_cannot_be_called_outdated(tmp_path, monkeypa
     (tmp_path / "DolphinTool.exe").write_bytes(b"whatever this is")
 
     assert mgr.matches_manifest("DolphinTool") is True
+
+
+# ---------------------------------------- what may run, and what may unpack
+
+def test_no_module_falls_back_to_an_executable_from_PATH():
+    """The extractor used to fall back to whatever `7zr` or `7z` was first on
+    PATH, which is an executable nobody checked, run to unpack the archives
+    every other tool arrives in. PATH on Windows routinely includes
+    directories other software can write to."""
+    import ast
+
+    source = Path(__file__).resolve().parents[1] / "src" / "aynthor"
+    offenders = []
+    for path in source.rglob("*.py"):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if (isinstance(node, ast.Attribute) and node.attr == "which"
+                    and isinstance(node.value, ast.Name) and node.value.id == "shutil"):
+                offenders.append(f"{path.name}:{node.lineno}")
+    assert offenders == []
+
+
+def test_an_archive_that_unpacks_to_absurd_size_is_refused(tmp_path, monkeypatch):
+    """The archive itself is never hashed, only what comes out of it, so
+    extraction happens before anything has been verified."""
+    import zipfile
+
+    from aynthor.core.tools import manager as manager_module
+
+    monkeypatch.setattr(manager_module, "tools_dir", lambda: tmp_path)
+    monkeypatch.setattr(manager_module, "_MAX_UNPACKED", 1024)
+    mgr = manager_module.ToolsManager()
+
+    archive = tmp_path / "bomb.zip"
+    with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("payload.bin", b"\0" * 65536)
+
+    with pytest.raises(manager_module.ToolError, match="unpacks to"):
+        mgr._extract_zip(archive, tmp_path / "into")
+
+
+def test_an_archive_with_absurdly_many_members_is_refused(tmp_path, monkeypatch):
+    import zipfile
+
+    from aynthor.core.tools import manager as manager_module
+
+    monkeypatch.setattr(manager_module, "tools_dir", lambda: tmp_path)
+    monkeypatch.setattr(manager_module, "_MAX_MEMBERS", 3)
+    mgr = manager_module.ToolsManager()
+
+    archive = tmp_path / "many.zip"
+    with zipfile.ZipFile(archive, "w") as zf:
+        for i in range(5):
+            zf.writestr(f"f{i}.bin", b"x")
+
+    with pytest.raises(manager_module.ToolError, match="entries"):
+        mgr._extract_zip(archive, tmp_path / "into")

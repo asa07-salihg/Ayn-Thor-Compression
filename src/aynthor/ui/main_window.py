@@ -308,7 +308,10 @@ class MainWindow(QMainWindow):
         keys = Path(self.settings.keys_path) if self.settings.keys_path else find_prod_keys()
         if keys and keys.is_file():
             self.settings.keys_path = str(keys)
-            self._log(f"Switch keys: {keys}")
+            # The folder, not the file: the log pane is what people paste into
+            # bug reports, and where somebody keeps their console keys is not
+            # a detail they should have to notice they are sharing.
+            self._log(f"Switch keys: found in {keys.parent.name or keys.parent}")
 
         self.theme_actions[state.load_mode()].setChecked(True)
 

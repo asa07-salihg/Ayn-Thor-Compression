@@ -18,6 +18,19 @@ so redirects must be followed, but one that drops to plain HTTP is refused),
 certificates and hostnames verified explicitly, a size cap and a timeout on
 every request, and a partial download deleted rather than left behind.
 
+**Only the verified copy runs.** There is no fallback to a converter found on
+`PATH`, and the 3DS tools, which are copied to a working directory before use,
+are compared by content rather than by size so an old or planted copy cannot
+survive there. An archive is checked for member count and unpacked size before
+extraction, because the archive itself is unpacked before any of it has been
+hashed.
+
+**Nothing a converter is given can be read as an option.** The tools take files
+as positional arguments and none of them supports `--`, so a ROM named `-o` or
+`--recursive` would be a flag rather than a file. Every path reaches them
+absolute, which on Windows starts with a drive letter and can never look like
+one.
+
 **Downloads are verified.** Every file is fetched to a scratch directory,
 unpacked there, hashed, and copied into `tools/` only once its SHA-256 matches
 the value recorded in
@@ -54,8 +67,13 @@ checksum file cannot be installed from inside the app at all.
 
 Switch compression needs keys dumped from a console you own. The app looks for
 them next to the exe, in `%USERPROFILE%\.switch\prod.keys`, or at a path you
-select, and the only thing it does with the file is copy it, on your machine,
-into the working directory nsz reads from.
+select.
+
+nsz reads its keys from its working directory, so the file is copied there for
+the length of one conversion and deleted afterwards, including when the
+conversion fails. It is not left behind, and a keys file you pointed at
+directly is never touched. The log names the folder the keys were found in, not
+the full path, because the log is what people paste into bug reports.
 
 `prod.keys`, `keys.txt` and `*.keys` are in `.gitignore`. Do not remove them: a
 keys file in a public repository is a takedown risk for the whole project, and
@@ -82,7 +100,16 @@ build it yourself.
 
 ## Your files
 
-Everything happens locally; nothing is uploaded. Two operations modify files in
+Everything happens locally; nothing is uploaded.
+
+An imported list is a text file somebody else may have written, so the game
+name it supplies is reduced to a single folder name before it can be part of an
+output path. Left alone it decided where the converter wrote, and a converter
+writes with overwrite already on.
+
+A file that expands to more than its own header says it should is stopped and
+its partial output removed, rather than filling the disk first and comparing
+afterwards. Two operations modify files in
 place. **NDS trim** rewrites the cart image, copying it first when the output
 path differs from the input. **Delete the source file** removes the input after
 a successful conversion: it is off by default, never remembered between

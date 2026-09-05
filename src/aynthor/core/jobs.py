@@ -23,6 +23,28 @@ from aynthor.core.models import CompressionFormat, ConversionJob, QueueItem
 from aynthor.core.settings import FormatSettings
 
 
+def _absolute(path: Path) -> Path:
+    """Every path a converter is given, as an absolute one.
+
+    Why
+        The converters take their files as positional arguments and none of
+        them supports `--` to end the options. A relative path is therefore one
+        rename away from being read as a flag: a ROM called `-o` or
+        `--recursive` would reach chdman's command line meaning something this
+        app never intended, and such a name is trivial to create and does turn
+        up in downloaded sets.
+
+        An absolute path cannot be mistaken for one. On Windows it starts with
+        a drive letter, on anything else with a separator, and both are the one
+        thing an option can never begin with. Doing it here rather than in each
+        converter means it holds for every tool, including the next one added.
+
+    Reference
+        https://cwe.mitre.org/data/definitions/88.html
+    """
+    return path if path.is_absolute() else path.resolve()
+
+
 def job_options(settings: FormatSettings, item: QueueItem) -> dict:
     """The flags one row's converter will be given.
 
@@ -88,8 +110,8 @@ def build_jobs(
         jobs.append((
             row,
             ConversionJob(
-                input_path=item.path,
-                output_path=output,
+                input_path=_absolute(item.path),
+                output_path=_absolute(output),
                 format=item.format,
                 options=job_options(settings, item),
                 input_size=input_size,
