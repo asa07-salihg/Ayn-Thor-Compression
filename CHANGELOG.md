@@ -3,11 +3,7 @@
 Notable changes, newest first. Versions follow
 [semantic versioning](https://semver.org/).
 
-## Unreleased
-
-Changes that are on `main` but not in a release yet. Cutting a version
-renames this heading to that version, so an entry can never end up filed
-under a tag it did not ship in.
+## 1.2.0
 
 ### Security
 
