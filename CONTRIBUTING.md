@@ -151,6 +151,13 @@ Do not attach ROMs, keys or game data. Filenames and sizes are enough.
 
 ## Releasing
 
+New entries go under `## Unreleased` in the changelog, never under the version
+number at the top of `__init__.py`. That number is the last thing released, so
+writing an entry under it files the change against a build it is not in; three
+releases in a row had to be unpicked afterwards before this rule existed.
+Cutting a version renames the heading and bumps the two version fields in the
+same commit.
+
 A tag triggers the build. The release needs both `AynThorCompression.exe` and
 `SHA256SUMS.txt`, from the same build and under exactly those names, or the
 updater will refuse it. The version lives in `src/aynthor/__init__.py` and

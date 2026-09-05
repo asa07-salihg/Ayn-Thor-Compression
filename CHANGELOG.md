@@ -3,13 +3,19 @@
 Notable changes, newest first. Versions follow
 [semantic versioning](https://semver.org/).
 
-## 1.1.3
+## Unreleased
+
+Changes that are on `main` but not in a release yet. Cutting a version
+renames this heading to that version, so an entry can never end up filed
+under a tag it did not ship in.
 
 - **Output path rules moved into `core`.** They decide where a converted file
   lands and they touch no Qt, but they lived in the queue widget, so the tests
   for them had to import a widget module and the engine suite, which CI runs
   with PySide6 not installed, could not load them. A test now fails if any file
   outside the interface suite imports Qt or `aynthor.ui` at all.
+
+## 1.1.3
 
 - **The output can go straight into an ES-DE ROMs folder.** Set it under
   Settings > General and a converted file is written into the platform
