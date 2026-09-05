@@ -3,7 +3,7 @@
 Notable changes, newest first. Versions follow
 [semantic versioning](https://semver.org/).
 
-## 1.1.2
+## 1.1.3
 
 - **The output can go straight into an ES-DE ROMs folder.** Set it under
   Settings > General and a converted file is written into the platform
@@ -30,6 +30,8 @@ Notable changes, newest first. Versions follow
   so pressing *Update outdated* fixed a tool and the next launch put the old one
   back, leaving the row outdated forever. It only fills a gap now; replacing a
   tool is the Tools window's job, and that checks hashes.
+
+## 1.1.2
 
 - **A pinned tool that moved now actually gets replaced.** The app only asked
   whether a converter's file existed, so a copy installed under an older pin sat
