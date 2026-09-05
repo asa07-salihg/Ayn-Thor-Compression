@@ -134,8 +134,8 @@ def test_a_card_destination_sends_the_result_to_its_platform_folder(tmp_path):
     """The point of naming the card: a fresh download converts straight into
     the folder the emulator reads, instead of a pile the user then sorts."""
     from aynthor.core.models import CompressionFormat, ConversionMode
+    from aynthor.core.output import output_for
     from aynthor.core.settings import FormatSettings
-    from aynthor.ui.queue_view import output_for
 
     card = tmp_path / "ROMs"
     (card / "ps2").mkdir(parents=True)
@@ -148,8 +148,8 @@ def test_a_card_destination_sends_the_result_to_its_platform_folder(tmp_path):
 
 def test_a_row_with_no_platform_falls_back_to_the_ordinary_rules(tmp_path):
     from aynthor.core.models import CompressionFormat, ConversionMode
+    from aynthor.core.output import output_for
     from aynthor.core.settings import FormatSettings
-    from aynthor.ui.queue_view import output_for
 
     settings = FormatSettings(esde_root=str(tmp_path / "ROMs"))
     source = tmp_path / "Downloads" / "game.iso"
@@ -160,8 +160,8 @@ def test_a_row_with_no_platform_falls_back_to_the_ordinary_rules(tmp_path):
 
 def test_the_card_wins_over_a_plain_output_folder(tmp_path):
     from aynthor.core.models import CompressionFormat, ConversionMode
+    from aynthor.core.output import output_for
     from aynthor.core.settings import FormatSettings
-    from aynthor.ui.queue_view import output_for
 
     card = tmp_path / "ROMs"
     settings = FormatSettings(output_dir=str(tmp_path / "elsewhere"), esde_root=str(card))

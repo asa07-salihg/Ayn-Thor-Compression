@@ -5,6 +5,12 @@ Notable changes, newest first. Versions follow
 
 ## 1.1.3
 
+- **Output path rules moved into `core`.** They decide where a converted file
+  lands and they touch no Qt, but they lived in the queue widget, so the tests
+  for them had to import a widget module and the engine suite, which CI runs
+  with PySide6 not installed, could not load them. A test now fails if any file
+  outside the interface suite imports Qt or `aynthor.ui` at all.
+
 - **The output can go straight into an ES-DE ROMs folder.** Set it under
   Settings > General and a converted file is written into the platform
   folder it belongs in, rather than beside its input. That is what someone
