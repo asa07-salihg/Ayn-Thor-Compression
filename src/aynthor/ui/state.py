@@ -62,6 +62,7 @@ def save(settings: FormatSettings, geometry: QByteArray) -> None:
     store = _store()
     store.setValue("window/geometry", geometry)
     store.setValue("job/output_dir", settings.output_dir)
+    store.setValue("job/esde_root", settings.esde_root)
     store.setValue("job/on_conflict", settings.on_conflict)
     store.setValue("job/switch_subdirs", settings.switch_game_subdirs)
     store.setValue("job/keys_path", settings.keys_path)
@@ -75,6 +76,7 @@ def load_into(settings: FormatSettings) -> None:
     """Fill a FormatSettings from what was saved. Anything unreadable is skipped."""
     store = _store()
     settings.output_dir = str(store.value("job/output_dir", ""))
+    settings.esde_root = str(store.value("job/esde_root", ""))
     settings.on_conflict = str(store.value("job/on_conflict", "skip"))
     settings.keys_path = str(store.value("job/keys_path", ""))
 

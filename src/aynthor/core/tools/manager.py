@@ -240,9 +240,9 @@ class ToolsManager:
         copied into tools/ until the whole set has been verified."""
         if spec.archive == "exe":
             only = spec.files[0]
-            staged = scratch / only.name
-            download.replace(staged)
-            return {only.name: staged}
+            target = scratch / only.name
+            download.replace(target)
+            return {only.name: target}
 
         extracted = scratch / "unpacked"
         extracted.mkdir()

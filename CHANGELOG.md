@@ -5,6 +5,32 @@ Notable changes, newest first. Versions follow
 
 ## 1.1.2
 
+- **The output can go straight into an ES-DE ROMs folder.** Set it under
+  Settings > General and a converted file is written into the platform
+  folder it belongs in, rather than beside its input. That is what someone
+  converting a fresh download wants: the file lands where the emulator looks
+  for it instead of in a pile to be sorted afterwards.
+- **The queue has a Platform column**, left of Becomes and clickable the same
+  way. A file in a card's `ps2` folder fills it in by itself; a download sitting
+  in `Downloads` has nothing to go on, so this is where you say what it is.
+  Picking a platform also applies that platform's format and flags to the row.
+- **Changing a row's format no longer carries the old format's settings.**
+  `level` means 5 to DolphinTool and 9 to 7-Zip, so a GameCube row switched to
+  7z was archiving at level 5 and saying nothing. A format change now reloads
+  that format's own settings and keeps only the row's game grouping. A test
+  fails if another option key ever ends up shared between two formats.
+- **`audit_folders` returned a dictionary its own type annotation described
+  wrongly**, holding two mappings and a string together. It returns a small
+  record now, which is what the reader and the type checker both needed.
+- **The ES-DE folder is resolved once, not once per file.** Working out whether
+  the chosen folder was the ROMs folder or the one above it reads the disk, and
+  the queue asked per row; a two thousand file card asked two thousand times.
+- **The bundled copy of a tool no longer overwrites one you just updated.**
+  The frozen build unpacks its tools next to the exe and compared them by size,
+  so pressing *Update outdated* fixed a tool and the next launch put the old one
+  back, leaving the row outdated forever. It only fills a gap now; replacing a
+  tool is the Tools window's job, and that checks hashes.
+
 - **A pinned tool that moved now actually gets replaced.** The app only asked
   whether a converter's file existed, so a copy installed under an older pin sat
   in `tools/` forever, reported as installed, and no amount of bumping the

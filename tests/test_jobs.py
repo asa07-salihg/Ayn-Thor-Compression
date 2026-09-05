@@ -126,3 +126,67 @@ def test_rows_keep_their_table_index(source, tmp_path):
     rows = [(3, QueueItem(source, CompressionFormat.CHD, ConversionMode.COMPRESS,
                           tmp_path / "out.chd"))]
     assert build_jobs(rows, FormatSettings())[0][0] == 3
+
+
+# ------------------------------------------------- writing onto an ES-DE card
+
+def test_a_card_destination_sends_the_result_to_its_platform_folder(tmp_path):
+    """The point of naming the card: a fresh download converts straight into
+    the folder the emulator reads, instead of a pile the user then sorts."""
+    from aynthor.core.models import CompressionFormat, ConversionMode
+    from aynthor.core.settings import FormatSettings
+    from aynthor.ui.queue_view import output_for
+
+    card = tmp_path / "ROMs"
+    (card / "ps2").mkdir(parents=True)
+    settings = FormatSettings(esde_root=str(card))
+
+    out = output_for(tmp_path / "Downloads" / "game.iso", CompressionFormat.CHD,
+                     ConversionMode.COMPRESS, settings, {}, platform="ps2")
+    assert out == card / "ps2" / "game.chd"
+
+
+def test_a_row_with_no_platform_falls_back_to_the_ordinary_rules(tmp_path):
+    from aynthor.core.models import CompressionFormat, ConversionMode
+    from aynthor.core.settings import FormatSettings
+    from aynthor.ui.queue_view import output_for
+
+    settings = FormatSettings(esde_root=str(tmp_path / "ROMs"))
+    source = tmp_path / "Downloads" / "game.iso"
+    out = output_for(source, CompressionFormat.CHD, ConversionMode.COMPRESS,
+                     settings, {}, platform="")
+    assert out == source.with_suffix(".chd")
+
+
+def test_the_card_wins_over_a_plain_output_folder(tmp_path):
+    from aynthor.core.models import CompressionFormat, ConversionMode
+    from aynthor.core.settings import FormatSettings
+    from aynthor.ui.queue_view import output_for
+
+    card = tmp_path / "ROMs"
+    settings = FormatSettings(output_dir=str(tmp_path / "elsewhere"), esde_root=str(card))
+    out = output_for(tmp_path / "game.iso", CompressionFormat.CHD,
+                     ConversionMode.COMPRESS, settings, {}, platform="gc")
+    assert out.parent == card / "gc"
+
+
+def test_changing_a_row_format_drops_the_previous_format_options():
+    """`level` means 5 to DolphinTool and 9 to 7-Zip. Carrying the old value
+    across a format change archived at the wrong setting and said nothing."""
+    from aynthor.core.models import CompressionFormat
+    from aynthor.core.presets import PRESETS
+
+    shared: dict[str, set[str]] = {}
+    for preset in PRESETS:
+        for key in preset.options:
+            shared.setdefault(key, set()).add(preset.format.value)
+    ambiguous = {k for k, v in shared.items() if len(v) > 1}
+    assert ambiguous == {"level"}, (
+        "another option key is now used by more than one format; "
+        "_FORMAT_NEUTRAL in queue_view must not include it")
+
+    rvz = PRESETS.get("gc")
+    seven = PRESETS.get("snes")
+    assert rvz is not None and seven is not None
+    assert rvz.format is CompressionFormat.RVZ
+    assert rvz.options["level"] != seven.options["level"]

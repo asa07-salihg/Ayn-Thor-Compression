@@ -24,6 +24,7 @@ Reference
 
 from __future__ import annotations
 
+from functools import lru_cache
 from pathlib import Path
 from typing import ClassVar
 
@@ -40,6 +41,8 @@ from PySide6.QtWidgets import (
     QTableWidgetItem,
 )
 
+from aynthor.core import esde
+from aynthor.core.esde import ESDE_PLATFORM_FOLDERS
 from aynthor.core.formats import (
     FORMAT_CATALOG,
     format_info,
@@ -48,7 +51,7 @@ from aynthor.core.formats import (
 )
 from aynthor.core.models import CompressionFormat, ConversionMode, QueueItem
 from aynthor.core.modes import FORMAT_MODES
-from aynthor.core.presets import detect_platform_format
+from aynthor.core.presets import PRESETS, detect_platform_format
 from aynthor.core.settings import FormatSettings
 from aynthor.core.switch import detect_content_type, is_switch_rom, normalize_game_name
 from aynthor.ui import theme
@@ -66,6 +69,7 @@ _NAMED_BY_OUTPUT = frozenset({
 })
 _ROLE_FORMAT = Qt.ItemDataRole.UserRole + 3
 _ROLE_MODE = Qt.ItemDataRole.UserRole + 4
+_ROLE_PLATFORM = Qt.ItemDataRole.UserRole + 5
 
 
 def human_size(num_bytes: float) -> str:
@@ -118,9 +122,12 @@ class QueueTable(QTableWidget):
     queue_changed = Signal()
     settings_requested = Signal(object)  # CompressionFormat
 
-    COL_FILE, COL_GAME, COL_TYPE, COL_BECOMES, COL_SIZE, COL_SAVED, COL_STATUS = range(7)
-    _HEADERS = ("File", "Game", "Part", "Becomes", "Size", "Saved", "Status")
+    (COL_FILE, COL_GAME, COL_TYPE, COL_PLATFORM,
+     COL_BECOMES, COL_SIZE, COL_SAVED, COL_STATUS) = range(8)
+    _HEADERS = ("File", "Game", "Part", "Platform", "Becomes", "Size", "Saved", "Status")
     _NUMERIC = (COL_SIZE, COL_SAVED)
+    # Both open a menu on a single click, so both draw the chevron.
+    _CLICKABLE = (COL_PLATFORM, COL_BECOMES)
 
     _STATUS_COLOURS: ClassVar[dict[str, str]] = {
         "Done": "ok", "Failed": "error", "Waiting": "textThird",
@@ -145,7 +152,8 @@ class QueueTable(QTableWidget):
         # The Becomes cell is a control, not a label: one click opens the list
         # of formats that accept the file. Right-click still reaches the same
         # menu plus everything else a row can do.
-        self.setItemDelegateForColumn(self.COL_BECOMES, _BecomesDelegate(self))
+        for column in self._CLICKABLE:
+            self.setItemDelegateForColumn(column, _BecomesDelegate(self))
         self.setMouseTracking(True)
         self.cellClicked.connect(self._on_cell_clicked)
 
@@ -157,7 +165,8 @@ class QueueTable(QTableWidget):
             (self.COL_FILE, QHeaderView.ResizeMode.Stretch, 0),
             (self.COL_GAME, QHeaderView.ResizeMode.Interactive, 150),
             (self.COL_TYPE, QHeaderView.ResizeMode.ResizeToContents, 0),
-            (self.COL_BECOMES, QHeaderView.ResizeMode.Interactive, 150),
+            (self.COL_PLATFORM, QHeaderView.ResizeMode.Interactive, 130),
+            (self.COL_BECOMES, QHeaderView.ResizeMode.Interactive, 130),
             (self.COL_SIZE, QHeaderView.ResizeMode.Interactive, 84),
             (self.COL_SAVED, QHeaderView.ResizeMode.Interactive, 76),
             (self.COL_STATUS, QHeaderView.ResizeMode.Interactive, 92),
@@ -208,7 +217,8 @@ class QueueTable(QTableWidget):
 
             options = self._with_switch_metadata(path, fmt, dict(detected.tool_options))
             mode = natural_mode(path, fmt)
-            output = output_for(path, fmt, mode, settings, options)
+            platform = detected.platform or ""
+            output = output_for(path, fmt, mode, settings, options, platform)
             if mode is ConversionMode.COMPRESS and output == path \
                     and fmt is not CompressionFormat.NDS_TRIM:
                 # The file is already the container this platform wants. NDS
@@ -222,6 +232,7 @@ class QueueTable(QTableWidget):
                 mode=mode,
                 output=output,
                 tool_options=options,
+                platform=platform,
                 game_group=options.get("game_group", ""),
                 content_type=options.get("content_type", ""),
             ))
@@ -243,11 +254,13 @@ class QueueTable(QTableWidget):
                 continue
             options = self._with_switch_metadata(path, fmt, dict(options))
             mode = natural_mode(path, fmt)
+            platform = detect_platform_format(path).platform or ""
             self._append(QueueItem(
                 path=path,
                 format=fmt,
                 mode=mode,
-                output=output_for(path, fmt, mode, settings, options),
+                platform=platform,
+                output=output_for(path, fmt, mode, settings, options, platform),
                 tool_options=options,
                 game_group=options.get("game_group", ""),
                 content_type=options.get("content_type", ""),
@@ -298,6 +311,10 @@ class QueueTable(QTableWidget):
         self.setItem(row, self.COL_GAME, game)
         self.setItem(row, self.COL_TYPE, QTableWidgetItem(item.content_type))
 
+        platform = QTableWidgetItem()
+        platform.setData(_ROLE_PLATFORM, item.platform)
+        self.setItem(row, self.COL_PLATFORM, platform)
+
         becomes = QTableWidgetItem()
         becomes.setData(_ROLE_PATH, item.output)
         becomes.setData(_ROLE_FORMAT, item.format.value if item.format else "")
@@ -336,6 +353,9 @@ class QueueTable(QTableWidget):
     def row_mode(self, row: int) -> ConversionMode:
         return ConversionMode(self.item(row, self.COL_BECOMES).data(_ROLE_MODE))
 
+    def row_platform(self, row: int) -> str:
+        return self.item(row, self.COL_PLATFORM).data(_ROLE_PLATFORM) or ""
+
     def row_item(self, row: int) -> QueueItem:
         name = self.item(row, self.COL_FILE)
         becomes = self.item(row, self.COL_BECOMES)
@@ -343,6 +363,7 @@ class QueueTable(QTableWidget):
             path=name.data(_ROLE_PATH),
             format=self.row_format(row),
             mode=self.row_mode(row),
+            platform=self.row_platform(row),
             output=becomes.data(_ROLE_PATH),
             tool_options=name.data(_ROLE_OPTIONS) or {},
             game_group=self.item(row, self.COL_GAME).text(),
@@ -377,7 +398,16 @@ class QueueTable(QTableWidget):
 
         info = format_info(fmt) if fmt else None
         becomes = self.item(row, self.COL_BECOMES)
-        output = output_for(path, fmt, mode, self._settings, options) if fmt else path
+        platform = self.row_platform(row)
+        output = (output_for(path, fmt, mode, self._settings, options, platform)
+                  if fmt else path)
+
+        cell = self.item(row, self.COL_PLATFORM)
+        preset = PRESETS.get(platform)
+        cell.setText(preset.label if preset else (platform or "unknown"))
+        cell.setToolTip(
+            "Which ES-DE folder this file belongs to. It decides the settings, "
+            "and where the result goes when a card is set as the destination.")
 
         label = info.label if info else "?"
         if mode == ConversionMode.DECOMPRESS and fmt is not None:
@@ -403,12 +433,29 @@ class QueueTable(QTableWidget):
         for row in range(self.rowCount()):
             self._refresh_row(row)
 
+    # Options a row keeps whatever format it is converted to. Everything else
+    # in a row's options belongs to the converter that was chosen when the row
+    # was made, and must not survive a change of format: `level` means 5 to
+    # DolphinTool and 9 to 7-Zip, so an RVZ row switched to 7z was silently
+    # archiving at level 5.
+    _FORMAT_NEUTRAL: ClassVar[tuple[str, ...]] = ("game_group", "content_type")
+
+    def _reset_options(self, row: int, fmt: CompressionFormat, extra: dict | None = None) -> None:
+        name = self.item(row, self.COL_FILE)
+        previous = name.data(_ROLE_OPTIONS) or {}
+        options = {k: previous[k] for k in self._FORMAT_NEUTRAL if k in previous}
+        options.update(self._settings.for_format(fmt))
+        if extra:
+            options.update(extra)
+        name.setData(_ROLE_OPTIONS, options)
+
     def set_format(self, rows: list[int], fmt: CompressionFormat) -> None:
         for row in rows:
             becomes = self.item(row, self.COL_BECOMES)
             becomes.setData(_ROLE_FORMAT, fmt.value)
             if not self._supports_reverse(fmt):
                 becomes.setData(_ROLE_MODE, ConversionMode.COMPRESS.value)
+            self._reset_options(row, fmt)
             self._refresh_row(row)
             self.update_status(row, "Waiting")
         self.queue_changed.emit()
@@ -519,6 +566,40 @@ class QueueTable(QTableWidget):
         extension = path.suffix.lower()
         return [info for info in FORMAT_CATALOG if extension in info.extensions]
 
+    def set_platform(self, rows: list[int], platform: str) -> None:
+        """Set a row's platform, and with it the settings its files get.
+
+        Someone converting a fresh download has a file sitting in Downloads
+        rather than in a card's `ps2` folder, so nothing can be worked out from
+        where it is. Naming the platform is what tells the app which emulator
+        will read the result, and which folder of a card to write it into.
+        """
+        for row in rows:
+            self.item(row, self.COL_PLATFORM).setData(_ROLE_PLATFORM, platform)
+            preset = PRESETS.get(platform)
+            if preset is not None and preset.format in {
+                    i.format for i in self._accepted_formats(row)}:
+                self.item(row, self.COL_BECOMES).setData(_ROLE_FORMAT, preset.format.value)
+                self._reset_options(row, preset.format, preset.options)
+            self._refresh_row(row)
+            self.update_status(row, "Waiting")
+        self.queue_changed.emit()
+
+    def _add_platform_actions(self, menu: QMenu, row: int, rows: list[int]) -> bool:
+        """Every platform whose format this file's extension accepts."""
+        current = self.row_platform(row)
+        accepted = {info.format for info in self._accepted_formats(row)}
+        offered = [p for p in PRESETS if p.format in accepted]
+        for preset in offered:
+            action = QAction(preset.label, self, checkable=True)
+            action.setChecked(preset.platform == current)
+            if preset.note:
+                action.setToolTip(preset.note)
+            action.triggered.connect(
+                lambda _c, name=preset.platform, r=rows: self.set_platform(r, name))
+            menu.addAction(action)
+        return bool(offered)
+
     def _add_format_actions(self, menu: QMenu, row: int, rows: list[int]) -> bool:
         """Fill a menu with the formats this row's file can be converted to."""
         current = self.row_format(row)
@@ -543,12 +624,15 @@ class QueueTable(QTableWidget):
         return bool(offered)
 
     def _on_cell_clicked(self, row: int, column: int) -> None:
-        if column != self.COL_BECOMES or self.row_format(row) is None:
+        if column not in self._CLICKABLE or self.row_format(row) is None:
             return
         rows = self._target_rows(row)
         menu = QMenu(self)
         menu.setToolTipsVisible(True)
-        if not self._add_format_actions(menu, row, rows):
+        filled = (self._add_platform_actions(menu, row, rows)
+                  if column == self.COL_PLATFORM
+                  else self._add_format_actions(menu, row, rows))
+        if not filled:
             return
         # Open it under the cell, the way a combo box drops down.
         cell = self.visualItemRect(self.item(row, column))
@@ -556,7 +640,7 @@ class QueueTable(QTableWidget):
 
     def mouseMoveEvent(self, event: QMouseEvent) -> None:
         index = self.indexAt(event.pos())
-        clickable = (index.isValid() and index.column() == self.COL_BECOMES
+        clickable = (index.isValid() and index.column() in self._CLICKABLE
                      and self.row_format(index.row()) is not None)
         self.viewport().setCursor(
             Qt.CursorShape.PointingHandCursor if clickable else Qt.CursorShape.ArrowCursor)
@@ -598,16 +682,44 @@ def output_for(
     mode: ConversionMode,
     settings: FormatSettings,
     options: dict | None = None,
+    platform: str = "",
 ) -> Path:
-    """Where a row's result will be written, after the output folder and the
-    Switch grouping rules are applied."""
+    """Where a row's result will be written, after the card layout, the output
+    folder and the Switch grouping rules are applied.
+
+    An ES-DE card wins over a plain output folder when the row knows which
+    platform it is, because that is the whole point of naming the card: the
+    file should land in the folder the emulator reads, not in one pile the user
+    then has to sort.
+    """
     if fmt is None:
         return path
     suggested = suggest_output_path(path, fmt, mode, options)
     game_group = (options or {}).get("game_group", "")
+
+    base = _destination(settings, platform, path)
     if settings.switch_game_subdirs and game_group:
-        base = Path(settings.output_dir) if settings.output_dir else path.parent
-        return base / game_group / suggested.name
-    if settings.output_dir:
-        return Path(settings.output_dir) / suggested.name
+        return (base or path.parent) / game_group / suggested.name
+    if base:
+        return base / suggested.name
     return suggested
+
+
+@lru_cache(maxsize=8)
+def _roms_root(configured: str) -> Path:
+    """Cached: `resolve_roms_root` stats the disk to work out whether it was
+    given the ROMs folder or the folder above it, and this is asked once per
+    row. A two thousand file card did that two thousand times, and the answer
+    cannot change while the queue is being filled."""
+    return esde.resolve_roms_root(Path(configured))
+
+
+def _destination(settings: FormatSettings, platform: str, path: Path) -> Path | None:
+    """The folder a result goes in, or None to leave it beside its input."""
+    if settings.esde_root and platform:
+        folders = ESDE_PLATFORM_FOLDERS.get(platform)
+        if folders:
+            return _roms_root(settings.esde_root) / folders[0]
+    if settings.output_dir:
+        return Path(settings.output_dir)
+    return None

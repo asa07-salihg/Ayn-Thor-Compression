@@ -88,6 +88,9 @@ class QueueItem:
     mode: ConversionMode
     output: Path
     tool_options: dict | None = None
+    # The ES-DE platform this file belongs to, when one was worked out or the
+    # user picked one. It decides which folder of a card the output goes to.
+    platform: str = ""
     game_group: str = ""
     content_type: str = ""
     status: str = "Waiting"

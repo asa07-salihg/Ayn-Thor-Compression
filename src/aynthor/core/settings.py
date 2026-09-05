@@ -31,6 +31,14 @@ from aynthor.core.models import CompressionFormat
 class FormatSettings:
     output_dir: str = ""
 
+    # The user's ES-DE ROMs folder. When set, a converted file is written to
+    # the platform folder it belongs in rather than beside its input, which is
+    # what someone filling a card actually wants: point the app at a fresh
+    # download, tell it the platform, and the result lands where the emulator
+    # will look for it. Overrides `output_dir` for any row that knows its
+    # platform; a row that does not falls back to the ordinary rules.
+    esde_root: str = ""
+
     # skip | overwrite | rename. Skip by default so re-running over a finished
     # folder does nothing rather than redoing hours of work.
     on_conflict: str = "skip"

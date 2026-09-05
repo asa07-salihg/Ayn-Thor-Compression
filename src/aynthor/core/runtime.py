@@ -64,9 +64,12 @@ def ensure_tools_extracted() -> Path:
         if not item.is_file() or item.suffix.lower() not in _TOOL_SUFFIXES:
             continue
         target = dest / item.name
-        # Size is enough to spot a stale copy from an older release, and it
-        # avoids hashing several hundred megabytes on every single launch.
-        if target.is_file() and target.stat().st_size == item.stat().st_size:
+        # Only ever fill a gap. This used to overwrite whenever the size
+        # differed, which put the build's own copy back over a tool the user
+        # had just updated from the Tools window: pressing Update fixed it,
+        # the next launch undid it, and the row was outdated again forever.
+        # Replacing a tool is the Tools window's job, and it checks hashes.
+        if target.is_file():
             continue
         shutil.copy2(item, target)
     return dest

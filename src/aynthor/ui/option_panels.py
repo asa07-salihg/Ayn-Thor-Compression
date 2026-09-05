@@ -25,6 +25,7 @@ Reference
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable
+from pathlib import Path
 from typing import ClassVar
 
 from PySide6.QtCore import QObject, Qt, Signal
@@ -42,6 +43,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from aynthor.core.esde import resolve_roms_root
 from aynthor.core.formats import FORMAT_CATALOG
 from aynthor.core.models import CompressionFormat, ConversionMode
 from aynthor.core.settings import FormatSettings
@@ -725,6 +727,27 @@ class GeneralPanel(QWidget):
         out_layout.addWidget(clear)
         layout.addRow("Output folder:", out_row)
 
+        card_row = QWidget()
+        card_layout = QHBoxLayout(card_row)
+        card_layout.setContentsMargins(0, 0, 0, 0)
+        card_layout.setSpacing(6)
+        self.esde_edit = QLineEdit()
+        self.esde_edit.setPlaceholderText("Not set")
+        self.esde_edit.setReadOnly(True)
+        self.esde_edit.setToolTip(
+            "Your ES-DE ROMs folder. Set it and a converted file goes straight\n"
+            "into the platform folder it belongs in, which is what you want when\n"
+            "the source is a fresh download rather than the folder itself.\n"
+            "The Platform column on each row decides which one.")
+        card_browse = QPushButton("Browse")
+        card_browse.clicked.connect(self._pick_card)
+        card_clear = QPushButton("Clear")
+        card_clear.clicked.connect(lambda: self.esde_edit.setText(""))
+        card_layout.addWidget(self.esde_edit, stretch=1)
+        card_layout.addWidget(card_browse)
+        card_layout.addWidget(card_clear)
+        layout.addRow("ES-DE ROMs folder:", card_row)
+
         self.conflict_combo = QComboBox()
         self.conflict_combo.addItem("Skip it", "skip")
         self.conflict_combo.addItem("Overwrite it", "overwrite")
@@ -748,6 +771,7 @@ class GeneralPanel(QWidget):
 
         for widget, signal in (
             (self.output_edit, "textChanged"),
+            (self.esde_edit, "textChanged"),
             (self.conflict_combo, "currentIndexChanged"),
             (self.switch_subdirs, "toggled"),
             (self.delete_source, "toggled"),
@@ -759,12 +783,20 @@ class GeneralPanel(QWidget):
         if path:
             self.output_edit.setText(path)
 
+    def _pick_card(self) -> None:
+        """Accepts either the ROMs folder or the folder holding it; ES-DE's own
+        layout rules work out which was chosen."""
+        path = QFileDialog.getExistingDirectory(self, "Choose your ES-DE ROMs folder")
+        if path:
+            self.esde_edit.setText(str(resolve_roms_root(Path(path))))
+
     def load(self, settings: FormatSettings) -> None:
-        widgets = (self.output_edit, self.conflict_combo,
+        widgets = (self.output_edit, self.esde_edit, self.conflict_combo,
                    self.switch_subdirs, self.delete_source)
         for widget in widgets:
             widget.blockSignals(True)
         self.output_edit.setText(settings.output_dir)
+        self.esde_edit.setText(settings.esde_root)
         index = self.conflict_combo.findData(settings.on_conflict)
         if index >= 0:
             self.conflict_combo.setCurrentIndex(index)
@@ -775,6 +807,7 @@ class GeneralPanel(QWidget):
 
     def apply_to(self, settings: FormatSettings) -> None:
         settings.output_dir = self.output_edit.text().strip()
+        settings.esde_root = self.esde_edit.text().strip()
         settings.on_conflict = self.conflict_combo.currentData()
         settings.switch_game_subdirs = self.switch_subdirs.isChecked()
         settings.delete_source = self.delete_source.isChecked()

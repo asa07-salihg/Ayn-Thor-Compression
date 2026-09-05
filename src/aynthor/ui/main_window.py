@@ -472,11 +472,11 @@ class MainWindow(QMainWindow):
         """
         wanted = {e.platform for e in entries if e.target_format not in _NOT_CONVERTED}
         audit = audit_folders(root, wanted)
-        if audit["found"]:
-            found = ", ".join(f"{p} ({', '.join(v)})" for p, v in sorted(audit["found"].items()))
+        if audit.found:
+            found = ", ".join(f"{p} ({', '.join(v)})" for p, v in sorted(audit.found.items()))
             self._log(f"Found folders: {found}")
-        if audit["missing"]:
-            self._log("No folder for: " + ", ".join(sorted(audit["missing"])))
+        if audit.missing:
+            self._log("No folder for: " + ", ".join(sorted(audit.missing)))
 
         summary = summarize_list(entries)
         skipped = sum(count for fmt, count in summary.items() if fmt in _NOT_CONVERTED)

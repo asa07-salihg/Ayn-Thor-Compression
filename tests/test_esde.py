@@ -46,8 +46,8 @@ def test_search_returns_nothing_when_the_platform_has_no_folder(roms_root: Path)
 
 def test_audit_separates_present_from_absent(roms_root: Path):
     audit = audit_folders(roms_root, {"psx", "wiiu"})
-    assert "psx" in audit["found"]
-    assert "wiiu" in audit["missing"]
+    assert "psx" in audit.found
+    assert "wiiu" in audit.missing
 
 
 def test_every_platform_maps_back_from_its_folders():

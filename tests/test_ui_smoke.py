@@ -48,8 +48,24 @@ CONTROLS = (QComboBox, QCheckBox, QLineEdit, QSpinBox)
 
 
 @pytest.fixture(scope="module")
-def app() -> QApplication:
+def app(tmp_path_factory) -> QApplication:
+    """A Qt application whose saved settings go to a scratch directory.
+
+    Without this the window writes to the real registry or config file on the
+    machine running the tests, and a test that sets an output folder leaks it
+    into every later test and every later run.
+    """
+    from PySide6.QtCore import QSettings
+
+    from aynthor.ui.state import APPLICATION, ORGANISATION
     from aynthor.ui.theme import Mode, apply_theme
+
+    scratch = tmp_path_factory.mktemp("settings")
+    QSettings.setDefaultFormat(QSettings.Format.IniFormat)
+    for fmt in (QSettings.Format.IniFormat, QSettings.Format.NativeFormat):
+        QSettings.setPath(fmt, QSettings.Scope.UserScope, str(scratch))
+    # Belt and braces: whatever the path resolved to, start it empty.
+    QSettings(ORGANISATION, APPLICATION).clear()
 
     instance = QApplication.instance() or QApplication([])
     apply_theme(instance, Mode.DARK)
@@ -302,6 +318,62 @@ def test_the_becomes_cell_names_the_container_it_will_write(app, tmp_path):
     # An arcade romset that is already a zip has nothing to do, and is skipped
     # with a reason rather than queued to overwrite itself.
     assert "sf2.zip" not in shown
+
+
+def test_the_platform_cell_can_be_changed_and_moves_the_output(app, tmp_path):
+    """A fresh download sits in Downloads, not in a card's ps2 folder, so
+    nothing can be worked out from where it is. Naming the platform is what
+    tells the app which emulator will read the result."""
+    from aynthor.core.settings import FormatSettings
+    from aynthor.ui.main_window import MainWindow
+
+    card = tmp_path / "ROMs"
+    (card / "gc").mkdir(parents=True)
+    (tmp_path / "Downloads").mkdir()
+    (tmp_path / "Downloads" / "Some Game.iso").write_bytes(b"\0" * 2048)
+
+    window = MainWindow()
+    window.show()
+    window.settings = FormatSettings(esde_root=str(card))
+    window.queue.apply_settings(window.settings)
+    window._add([tmp_path / "Downloads"])
+    app.processEvents()
+
+    window.queue.set_platform([0], "gc")
+    app.processEvents()
+
+    assert window.queue.row_platform(0) == "gc"
+    assert window.queue.item(0, window.queue.COL_PLATFORM).text() == "GameCube"
+    assert window.queue.row_item(0).output.parent == card / "gc"
+    window.close()
+
+
+def test_switching_format_does_not_carry_the_old_format_settings(app, tmp_path):
+    """A GameCube row is RVZ at level 5. Switched to 7z it was archiving at 5,
+    because `level` exists in both and the row kept the old value."""
+    from aynthor.core.models import CompressionFormat
+    from aynthor.ui.main_window import MainWindow
+    from aynthor.ui.queue_view import _ROLE_OPTIONS
+
+    roms = tmp_path / "ROMs" / "gc"
+    roms.mkdir(parents=True)
+    (roms / "Metroid Prime.iso").write_bytes(b"\0" * 2048)
+
+    window = MainWindow()
+    window.show()
+    window._add([tmp_path / "ROMs"])
+    app.processEvents()
+
+    before = window.queue.item(0, window.queue.COL_FILE).data(_ROLE_OPTIONS)
+    assert before["level"] == 5
+
+    window.queue.set_format([0], CompressionFormat.SEVEN_ZIP)
+    app.processEvents()
+    after = window.queue.item(0, window.queue.COL_FILE).data(_ROLE_OPTIONS)
+    window.close()
+
+    assert after.get("level") != 5
+    assert "codec" not in after   # the RVZ keys are gone too
 
 
 def test_switching_theme_repaints_instead_of_leaving_half_the_window_behind(app):

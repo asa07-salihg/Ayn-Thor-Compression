@@ -22,6 +22,7 @@ Reference
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
 
 # Ayn Thor list platform -> ES-DE subfolder names (primary + alternatives)
@@ -116,17 +117,28 @@ def search_dirs(roms_root: Path, platform: str) -> list[Path]:
     return dirs
 
 
-def audit_folders(roms_root: Path, platforms: set[str] | None = None) -> dict[str, list[str]]:
+@dataclass(frozen=True)
+class FolderAudit:
+    """What a card actually has. A dataclass rather than a dict because the
+    dict held two mappings and a string under one annotation, which type
+    checking could not describe and a reader had to guess at."""
+
+    roms_root: Path
+    found: dict[str, list[str]]      # platform -> the folders that exist
+    missing: dict[str, list[str]]    # platform -> the folders that would do
+
+
+def audit_folders(roms_root: Path, platforms: set[str] | None = None) -> FolderAudit:
     """Report which platform folders exist."""
     root = resolve_roms_root(roms_root)
     check = platforms or COMPRESSIBLE_PLATFORMS
     found: dict[str, list[str]] = {}
     missing: dict[str, list[str]] = {}
     for platform in sorted(check):
-        existing = [f for f in ESDE_PLATFORM_FOLDERS.get(platform, (platform,))
-                    if (root / f).is_dir()]
+        candidates = ESDE_PLATFORM_FOLDERS.get(platform, (platform,))
+        existing = [f for f in candidates if (root / f).is_dir()]
         if existing:
             found[platform] = existing
         else:
-            missing[platform] = list(ESDE_PLATFORM_FOLDERS.get(platform, (platform,)))
-    return {"found": found, "missing": missing, "roms_root": str(root)}
+            missing[platform] = list(candidates)
+    return FolderAudit(root, found, missing)

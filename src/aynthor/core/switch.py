@@ -25,6 +25,7 @@ Reference
 from __future__ import annotations
 
 import re
+from collections.abc import Sequence
 from enum import Enum
 from pathlib import Path
 
@@ -138,7 +139,7 @@ def group_switch_files(files: list[Path]) -> dict[str, list[Path]]:
     return groups
 
 
-def content_warnings(types: list[ContentType | str]) -> list[str]:
+def content_warnings(types: Sequence[ContentType | str]) -> list[str]:
     labels = {t.value if isinstance(t, ContentType) else str(t) for t in types}
     warnings: list[str] = []
     if "Update" in labels and "Base" not in labels:

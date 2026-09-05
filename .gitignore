@@ -28,6 +28,11 @@ keys.txt
 tools/*
 !tools/.gitkeep
 
+# A real ES-DE card layout, kept locally for testing. Game files are not ours
+# to publish and the folder tree is noise in a diff.
+ROMs/
+roms/
+
 # Local git bundles (history backups), never project content
 *.bundle
 
