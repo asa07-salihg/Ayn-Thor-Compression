@@ -3,7 +3,7 @@
 Notable changes, newest first. Versions follow
 [semantic versioning](https://semver.org/).
 
-## Unreleased
+## 1.2.1
 
 - **Decrypting a CIA failed with "Unsupported CIA type", every time.** The
   crypto key was read from ctrtool's output with a pattern that expected a
