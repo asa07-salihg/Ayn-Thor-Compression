@@ -43,7 +43,10 @@ REQUIRED_TOOLS = ("ctrtool.exe", "decrypt.exe", "makerom.exe", "seeddb.bin")
 
 _TITLE_ID_RE = re.compile(r"Title\s?id:\s*([0-9a-fA-F]{16})")
 _VERSION_RE = re.compile(r"TitleVersion:\s*(\d+)")
-_CRYPTO_RE = re.compile(r"Crypto Key:\s*(.+)")
+# The pinned ctrtool prints " > Crypto Key None", no colon; the batch
+# script was written against a build that printed "Crypto Key: None". Requiring
+# the colon matched neither the decrypted case nor the Secure one.
+_CRYPTO_RE = re.compile(r"Crypto Key:?[ \t]*(\S.*)")
 _CONTENT_ID_RE = re.compile(r"ContentId:\s*([0-9a-fA-F]{8})")
 
 # .3ds partition name -> CCI partition index (mirrors the batch script)

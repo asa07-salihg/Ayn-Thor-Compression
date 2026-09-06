@@ -3,6 +3,16 @@
 Notable changes, newest first. Versions follow
 [semantic versioning](https://semver.org/).
 
+## Unreleased
+
+- **Decrypting a CIA failed with "Unsupported CIA type", every time.** The
+  crypto key was read from ctrtool's output with a pattern that expected a
+  colon, and the ctrtool this app ships prints the line without one. The key
+  therefore always came back empty: a CIA could never be recognised as
+  encrypted, and a `.3ds` that was already decrypted was quietly repacked
+  by makerom instead of being refused. Both read the key now, and a test
+  runs each path against the tool's real output.
+
 ## 1.2.0
 
 ### Security
