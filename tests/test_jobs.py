@@ -242,7 +242,7 @@ def test_a_grouping_name_cannot_escape_the_output_folder(tmp_path, hostile):
     from aynthor.core.settings import FormatSettings
 
     out = tmp_path / "out"
-    settings = FormatSettings(output_dir=str(out), switch_game_subdirs=True)
+    settings = FormatSettings(output_dir=str(out), game_folders=True)
     result = output_for(tmp_path / "game.nsp", CompressionFormat.NSZ,
                         ConversionMode.COMPRESS, settings,
                         {"game_group": hostile})
@@ -257,11 +257,11 @@ def test_an_ordinary_game_name_still_gets_its_folder(tmp_path):
     from aynthor.core.settings import FormatSettings
 
     out = tmp_path / "out"
-    settings = FormatSettings(output_dir=str(out), switch_game_subdirs=True)
+    settings = FormatSettings(output_dir=str(out), game_folders=True)
     result = output_for(tmp_path / "game.nsp", CompressionFormat.NSZ,
                         ConversionMode.COMPRESS, settings,
                         {"game_group": "Mario Kart 8 Deluxe"})
-    assert result.parent == out / "Mario Kart 8 Deluxe"
+    assert result == out / "Mario Kart 8 Deluxe.nsz" / "Mario Kart 8 Deluxe.nsz"
 
 
 @pytest.mark.parametrize("reserved", ["CON", "NUL", "com1", "LPT9.txt"])

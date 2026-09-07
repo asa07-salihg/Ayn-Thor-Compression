@@ -64,7 +64,8 @@ def save(settings: FormatSettings, geometry: QByteArray) -> None:
     store.setValue("job/output_dir", settings.output_dir)
     store.setValue("job/esde_root", settings.esde_root)
     store.setValue("job/on_conflict", settings.on_conflict)
-    store.setValue("job/switch_subdirs", settings.switch_game_subdirs)
+    store.setValue("job/game_folders", settings.game_folders)
+    store.setValue("job/show_empty_folders", settings.show_empty_folders)
     store.setValue("job/keys_path", settings.keys_path)
     # Per-format options are a dict of dicts; JSON keeps that intact across the
     # registry, which stores everything as strings.
@@ -80,9 +81,18 @@ def load_into(settings: FormatSettings) -> None:
     settings.on_conflict = str(store.value("job/on_conflict", "skip"))
     settings.keys_path = str(store.value("job/keys_path", ""))
 
-    raw_flag = store.value("job/switch_subdirs", False)
-    settings.switch_game_subdirs = (
+    raw_flag = store.value("job/game_folders", None)
+    if raw_flag is None:
+        # 1.2 stored this as Switch-only grouping. Anyone who had it on
+        # already wanted folders; the new flag is the same idea for every
+        # platform.
+        raw_flag = store.value("job/switch_subdirs", False)
+    settings.game_folders = (
         raw_flag if isinstance(raw_flag, bool) else str(raw_flag).lower() == "true")
+
+    raw_empty = store.value("job/show_empty_folders", False)
+    settings.show_empty_folders = (
+        raw_empty if isinstance(raw_empty, bool) else str(raw_empty).lower() == "true")
 
     settings.options = _load_options(store)
 

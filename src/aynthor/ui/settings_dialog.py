@@ -22,6 +22,7 @@ Reference
 from __future__ import annotations
 
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QGuiApplication, QShowEvent
 from PySide6.QtWidgets import (
     QDialog,
     QDialogButtonBox,
@@ -31,6 +32,7 @@ from PySide6.QtWidgets import (
     QListWidget,
     QListWidgetItem,
     QScrollArea,
+    QSizePolicy,
     QStackedWidget,
     QVBoxLayout,
     QWidget,
@@ -51,7 +53,6 @@ class SettingsDialog(QDialog):
                  parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setWindowTitle("Settings")
-        self.resize(880, 620)
         self.settings = settings
         self.presets = presets
         self.touched: set[CompressionFormat] = set()
@@ -61,17 +62,29 @@ class SettingsDialog(QDialog):
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(0)
 
-        body = QHBoxLayout()
-        body.setContentsMargins(12, 12, 12, 12)
-        body.setSpacing(12)
+        body = QWidget()
+        body.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        body_layout = QHBoxLayout(body)
+        body_layout.setContentsMargins(12, 12, 12, 12)
+        body_layout.setSpacing(12)
 
         self.categories = QListWidget()
         self.categories.setFixedWidth(190)
-        body.addWidget(self.categories)
+        body_layout.addWidget(self.categories)
 
         self.pages = QStackedWidget()
-        body.addWidget(self._page_frame(), stretch=1)
-        root.addLayout(body, stretch=1)
+        # Stacked pages must not force the dialog taller than the screen;
+        # each tall page scrolls inside itself instead.
+        self.pages.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        card = QFrame()
+        card.setProperty("role", "card")
+        card_layout = QVBoxLayout(card)
+        card_layout.setContentsMargins(0, 0, 0, 0)
+        card_layout.addWidget(self.pages)
+        body_layout.addWidget(card, stretch=1)
+        root.addWidget(body, stretch=1)
 
         self.general = GeneralPanel()
         self.general.load(settings)
@@ -94,31 +107,52 @@ class SettingsDialog(QDialog):
             QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel)
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
-        footer = QFrame()
-        footer.setProperty("role", "bar")
-        footer_layout = QHBoxLayout(footer)
+        self.footer = QFrame()
+        self.footer.setProperty("role", "bar")
+        self.footer.setSizePolicy(
+            QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
+        footer_layout = QHBoxLayout(self.footer)
         footer_layout.setContentsMargins(12, 10, 12, 10)
         footer_layout.addStretch()
         footer_layout.addWidget(buttons)
-        root.addWidget(footer)
+        root.addWidget(self.footer, stretch=0)
+
+        self._fit_to_screen()
+
+    def showEvent(self, event: QShowEvent) -> None:
+        super().showEvent(event)
+        self._fit_to_screen()
+
+    def _fit_to_screen(self) -> None:
+        """Keep the dialog inside the available desktop area."""
+        screen = self.screen() or QGuiApplication.primaryScreen()
+        if screen is None:
+            self.resize(880, 620)
+            return
+        avail = screen.availableGeometry()
+        max_w = max(640, avail.width() - 24)
+        max_h = max(420, avail.height() - 24)
+        self.setMaximumSize(max_w, max_h)
+        self.resize(min(880, max_w), min(620, max_h))
+        frame = self.frameGeometry()
+        if avail.contains(frame):
+            return
+        frame.moveCenter(avail.center())
+        x = min(max(frame.x(), avail.x()), avail.x() + avail.width() - frame.width())
+        y = min(max(frame.y(), avail.y()), avail.y() + avail.height() - frame.height())
+        self.move(x, y)
 
     def _on_presets_changed(self) -> None:
         self.presets_touched = True
 
-    def _page_frame(self) -> QWidget:
-        frame = QFrame()
-        frame.setProperty("role", "card")
-        layout = QVBoxLayout(frame)
-        layout.setContentsMargins(1, 1, 1, 1)
-
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setFrameShape(QFrame.Shape.NoFrame)
-        scroll.setWidget(self.pages)
-        layout.addWidget(scroll)
-        return frame
-
-    def _add_page(self, title: str, fmt: CompressionFormat | None, panel: QWidget) -> None:
+    def _add_page(
+        self,
+        title: str,
+        fmt: CompressionFormat | None,
+        panel: QWidget,
+        *,
+        scroll: bool = True,
+    ) -> None:
         item = QListWidgetItem(title)
         if fmt is not None:
             info = format_info(fmt)
@@ -127,6 +161,9 @@ class SettingsDialog(QDialog):
         self.categories.addItem(item)
 
         page = QWidget()
+        page.setMinimumHeight(0)
+        page.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Ignored)
         layout = QVBoxLayout(page)
         layout.setContentsMargins(16, 14, 16, 14)
         layout.setSpacing(10)
@@ -142,8 +179,22 @@ class SettingsDialog(QDialog):
             subtitle.setProperty("role", "second")
             layout.addWidget(subtitle)
 
-        layout.addWidget(panel)
-        layout.addStretch()
+        if scroll:
+            holder = QWidget()
+            holder_layout = QVBoxLayout(holder)
+            holder_layout.setContentsMargins(0, 0, 0, 0)
+            holder_layout.setSpacing(10)
+            holder_layout.addWidget(panel)
+            holder_layout.addStretch()
+            area = QScrollArea()
+            area.setWidgetResizable(True)
+            area.setFrameShape(QFrame.Shape.NoFrame)
+            area.setMinimumHeight(0)
+            area.setWidget(holder)
+            layout.addWidget(area, stretch=1)
+        else:
+            layout.addWidget(panel, stretch=1)
+
         self.pages.addWidget(page)
 
     def show_format(self, fmt: CompressionFormat) -> None:

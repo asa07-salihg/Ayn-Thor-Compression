@@ -18,6 +18,11 @@ Why
     becomes CHD. With nothing to go on it falls back to PS2, which is the
     largest ISO library on a handheld of this class by a wide margin.
 
+    `.zip` and `.7z` are the same kind of ambiguity. A zip in `fbneo/` is an
+    arcade romset; a zip in `snes/` is a cartridge dump that should become a
+    7z. The extension table still maps `.zip` to FBNeo and `.7z` to SNES for
+    files that sit in Downloads with no folder to go on.
+
 Used by
     `ui.queue_view` (every file added), `core.romlist` (imported lists),
     `ui.presets_page` (showing and editing them), `ui.state` (persisting the
@@ -36,7 +41,7 @@ from collections.abc import Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from aynthor.core.esde import FOLDER_TO_PLATFORM
+from aynthor.core.esde import FOLDER_TO_PLATFORM, platform_from_path
 from aynthor.core.formats import detect_format
 from aynthor.core.models import CompressionFormat
 
@@ -238,6 +243,10 @@ SKIP_PLATFORMS = {"windows", "steam"}
 # Which folder an ambiguous .iso is treated as when nothing else says.
 _ISO_FALLBACK = "ps2"
 
+# A zip is an arcade romset or a zipped cart; a 7z is a cart archive or a
+# wrapped disc. The folder they sit in is the only way to tell.
+_FOLDER_WINS = {".zip", ".7z"}
+
 
 @dataclass(frozen=True)
 class DetectResult:
@@ -268,7 +277,12 @@ def detect_platform_format(path: Path, presets: PresetTable | None = None) -> De
             None, "n64", {}, skip=True,
             skip_reason="N64 is left uncompressed; .z64 is the most compatible form")
 
-    platform = _platform_for_iso(path) if extension == ".iso" else EXT_TO_PLATFORM.get(extension)
+    if extension == ".iso":
+        platform = _platform_for_iso(path)
+    elif extension in _FOLDER_WINS:
+        platform = platform_from_path(path) or EXT_TO_PLATFORM.get(extension)
+    else:
+        platform = EXT_TO_PLATFORM.get(extension)
 
     preset = table.get(platform) if platform else None
     if preset is not None:

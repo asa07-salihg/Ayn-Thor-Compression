@@ -192,18 +192,18 @@ def is_dark() -> bool:
 
 
 _QSS = """
-* {{ font-family: {font}; font-size: 14px; }}
+* {{ font-family: {font}; font-size: 16px; }}
 QWidget {{ color: {text}; }}
 QMainWindow, QDialog {{ background: {page}; }}
 
-QLabel[role="title"] {{ font-family: {display}; font-size: 20px; font-weight: 600; }}
-QLabel[role="subtitle"] {{ font-size: 12px; color: {textSecond}; }}
+QLabel[role="title"] {{ font-family: {display}; font-size: 22px; font-weight: 600; }}
+QLabel[role="subtitle"] {{ font-size: 13px; color: {textSecond}; }}
 QLabel[role="second"] {{ color: {textSecond}; }}
-QLabel[role="third"] {{ color: {textThird}; font-size: 12px; }}
+QLabel[role="third"] {{ color: {textThird}; font-size: 13px; }}
 QLabel[role="warn"] {{ color: {warn}; }}
-QLabel[role="drop"] {{ font-size: 15px; color: {textSecond}; }}
+QLabel[role="drop"] {{ font-size: 17px; color: {textSecond}; }}
 /* The per-format panels set this by object name, from before roles existed. */
-QLabel#hintLabel {{ color: {textSecond}; font-size: 12px; }}
+QLabel#hintLabel {{ color: {textSecond}; font-size: 13px; }}
 
 /* ---- cards ------------------------------------------------------------ */
 QFrame[role="card"] {{
@@ -231,8 +231,8 @@ QPushButton {{
     border: 1px solid {stroke};
     border-bottom: 1px solid {strokeStrong};
     border-radius: {rControl}px;
-    padding: 5px 14px;
-    min-height: 20px;
+    padding: 6px 16px;
+    min-height: 24px;
 }}
 QPushButton:hover {{ background: {controlHover}; }}
 QPushButton:pressed {{ background: {controlPress}; color: {textSecond};
@@ -302,9 +302,18 @@ QTableView {{
 }}
 QTableView::item {{ padding: 4px 10px; border: none;
                     border-bottom: 1px solid {divider}; }}
+QTreeView {{
+    background: {card};
+    border: none;
+    outline: none;
+    selection-background-color: {subtleHover};
+    selection-color: {text};
+}}
+QTreeView::item {{ padding: 6px 8px; border: none;
+                   border-bottom: 1px solid {divider}; min-height: 26px; }}
 QHeaderView {{ background: {card}; }}
 QHeaderView::section {{
-    background: {card}; color: {textSecond}; font-size: 12px;
+    background: {card}; color: {textSecond}; font-size: 13px;
     border: none; border-bottom: 1px solid {stroke};
     padding: 7px 10px; }}
 QTableCornerButton::section {{ background: {card}; border: none;
@@ -322,7 +331,7 @@ QListWidget::item:disabled {{ color: {textThird}; }}
 /* ---- log -------------------------------------------------------------- */
 QPlainTextEdit#log {{
     background: {cardAlt}; border: none; border-top: 1px solid {stroke};
-    font-family: {mono}; font-size: 12px; color: {textSecond}; padding: 6px 10px; }}
+    font-family: {mono}; font-size: 13px; color: {textSecond}; padding: 6px 10px; }}
 
 /* ---- progress --------------------------------------------------------- */
 QProgressBar {{ border: none; border-radius: 2px; background: {subtleHover};

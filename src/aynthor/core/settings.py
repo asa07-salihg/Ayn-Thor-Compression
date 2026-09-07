@@ -45,9 +45,17 @@ class FormatSettings:
 
     delete_source: bool = False
 
-    # Switch titles arrive as base plus update plus DLC; this groups each set
-    # into its own output folder so an installer sees them together.
-    switch_game_subdirs: bool = False
+    # Give every game its own folder, named exactly like its primary file:
+    # `psx/Game.chd/Game.chd`. ES-DE shows such a folder as one game and
+    # launches the file inside that matches the folder's name, and extra discs,
+    # updates and DLC sit beside it under their own names. Replaces the older
+    # Switch-only grouping, which did the same thing for one platform.
+    game_folders: bool = False
+
+    # Empty platform and game folders (`psx/` with no ROMs yet, `Game.chd/`
+    # waiting for a dump) can sit in the queue as drop targets. Off by default
+    # so a freshly copied ES-DE tree of empty folders does not bury the files.
+    show_empty_folders: bool = False
 
     keys_path: str = ""
 

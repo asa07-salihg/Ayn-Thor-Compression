@@ -118,3 +118,14 @@ def test_every_compressible_platform_has_a_preset():
 
     missing = sorted(p for p in COMPRESSIBLE_PLATFORMS if PRESETS.get(p) is None)
     assert missing == []
+
+
+def test_the_platform_menu_lists_every_esde_folder():
+    from aynthor.core.esde import PLATFORM_MENU_GROUPS
+
+    listed = [platform for _group, platforms in PLATFORM_MENU_GROUPS for platform in platforms]
+    assert len(listed) == len(set(listed))
+    missing = sorted(set(ESDE_PLATFORM_FOLDERS) - set(listed))
+    extra = sorted(set(listed) - set(ESDE_PLATFORM_FOLDERS))
+    assert missing == []
+    assert extra == []

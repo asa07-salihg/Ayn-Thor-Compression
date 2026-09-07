@@ -39,9 +39,11 @@ class DropZone(QFrame):
     add_files = Signal()
     add_folder = Signal()
     import_list = Signal()
+    expand_all = Signal()
+    collapse_all = Signal()
 
-    _MIN_TALL = 190
-    _SHORT = 56
+    _MIN_TALL = 210
+    _SHORT = 64
 
     def __init__(self) -> None:
         super().__init__()
@@ -74,7 +76,7 @@ class DropZone(QFrame):
         layout.setSpacing(8)
         for label, signal, tip in (
             ("Add files", self.add_files, "Pick ROM files (Ctrl+O)"),
-            ("Add folder", self.add_folder, "Add every recognised ROM in a folder (Ctrl+Shift+O)"),
+            ("Add folder", self.add_folder, "Add a folder and everything in it (Ctrl+Shift+O)"),
             ("Import list", self.import_list,
              "Load a list and match it against a ROMs folder (Ctrl+I)"),
         ):
@@ -82,6 +84,19 @@ class DropZone(QFrame):
             button.setToolTip(tip)
             button.clicked.connect(signal.emit)
             layout.addWidget(button)
+        self._spacer = QWidget()
+        self._spacer.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        layout.addWidget(self._spacer)
+        self.expand_button = QPushButton("Expand all")
+        self.expand_button.setProperty("subtle", True)
+        self.expand_button.setToolTip("Open every folder in the queue")
+        self.expand_button.clicked.connect(self.expand_all.emit)
+        self.collapse_button = QPushButton("Collapse all")
+        self.collapse_button.setProperty("subtle", True)
+        self.collapse_button.setToolTip("Close every folder in the queue")
+        self.collapse_button.clicked.connect(self.collapse_all.emit)
+        layout.addWidget(self.expand_button)
+        layout.addWidget(self.collapse_button)
         return row
 
     def set_compact(self, compact: bool) -> None:
@@ -93,6 +108,9 @@ class DropZone(QFrame):
             self.setMinimumHeight(self._MIN_TALL)
             self.setMaximumHeight(16777215)
         self.headline.setVisible(not compact)
+        self._spacer.setVisible(compact)
+        self.expand_button.setVisible(compact)
+        self.collapse_button.setVisible(compact)
         if compact:
             self._layout.setContentsMargins(16, 8, 16, 8)
             self._layout.setAlignment(self.buttons, Qt.AlignmentFlag.AlignLeft)

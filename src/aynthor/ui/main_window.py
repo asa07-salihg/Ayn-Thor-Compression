@@ -45,7 +45,9 @@ from PySide6.QtWidgets import (
 
 from aynthor import CHANGELOG_URL, __version__
 from aynthor.core.esde import audit_folders, resolve_roms_root
-from aynthor.core.formats import format_info, known_extensions
+from aynthor.core.formats import file_dialog_filter, format_info, known_extensions
+from aynthor.core.groups import discover_folders
+from aynthor.core.intake import folder_label
 from aynthor.core.jobs import build_jobs
 from aynthor.core.models import CompressionFormat, ConversionJob
 from aynthor.core.presets import PRESETS
@@ -88,7 +90,7 @@ class MainWindow(QMainWindow):
         self.setWindowTitle(f"Ayn Thor Compression {__version__}")
         self.setWindowIcon(theme.app_icon())
         self.resize(1060, 700)
-        self.setMinimumSize(760, 480)
+        self.setMinimumSize(800, 500)
 
         self.settings = FormatSettings()
         self.tools = ToolsManager()
@@ -127,6 +129,8 @@ class MainWindow(QMainWindow):
         content_layout.addWidget(self.drop_zone, stretch=1)
 
         self.queue_card = self._build_queue_card()
+        self.drop_zone.expand_all.connect(self.queue.expandAll)
+        self.drop_zone.collapse_all.connect(self.queue.collapseAll)
         content_layout.addWidget(self.queue_card, stretch=4)
         layout.addWidget(content, stretch=1)
 
@@ -350,9 +354,10 @@ class MainWindow(QMainWindow):
         """Cheap enough to call after every finished job."""
         count = self.queue.rowCount()
         running = self._runner is not None and self._runner.isRunning()
+        populated = self.queue.topLevelItemCount() > 0
 
-        self.drop_zone.set_compact(count > 0)
-        self.queue_card.setVisible(count > 0)
+        self.drop_zone.set_compact(populated)
+        self.queue_card.setVisible(populated)
 
         parts: list[str] = []
         if count:
@@ -363,7 +368,7 @@ class MainWindow(QMainWindow):
         self.summary_label.setText("   ".join(parts))
 
         self.start_button.setEnabled(count > 0 and not running)
-        self.clear_button.setEnabled(count > 0 and not running)
+        self.clear_button.setEnabled(populated and not running)
 
     def _refresh_tool_warning(self) -> None:
         """Which formats in the queue need something that is not installed.
@@ -393,33 +398,49 @@ class MainWindow(QMainWindow):
         return bool(key) and not self.tools.is_available(key)
 
     def _pick_files(self) -> None:
-        patterns = " ".join(f"*{ext}" for ext in sorted(known_extensions()))
         paths, _ = QFileDialog.getOpenFileNames(
-            self, "Add files", "", f"ROMs and disc images ({patterns});;All files (*)")
+            self, "Add files", "", file_dialog_filter())
         if paths:
             self._add([Path(p) for p in paths])
 
     def _pick_folder(self) -> None:
-        folder = QFileDialog.getExistingDirectory(self, "Add every ROM in a folder")
+        folder = QFileDialog.getExistingDirectory(self, "Add a folder")
         if folder:
             self._add([Path(folder)])
 
     def _add(self, paths: list[Path]) -> None:
         extensions = known_extensions()
         files: list[Path] = []
+        labels: dict[Path, str] = {}
+        folders_added = 0
         for path in paths:
             if path.is_dir():
+                folders_added += self.queue.add_folder_tree(
+                    path, discover_folders(path), self.settings)
                 found = sorted(p for p in path.rglob("*")
                                if p.is_file() and p.suffix.lower() in extensions)
-                if not found:
-                    self._log(f"No recognised ROMs in {path}")
-                files.extend(found)
+                for found_file in found:
+                    files.append(found_file)
+                    labels[found_file] = folder_label(path, found_file)
             elif path.is_file():
                 files.append(path)
 
-        added, skipped = self.queue.add_paths(files, self.settings)
+        added, skipped = self.queue.add_paths(files, self.settings, labels)
+        pruned = self.queue.apply_empty_folder_setting()
+        folders_added = max(0, folders_added - pruned)
         if added:
             self._log(f"Added {added} file{'s' if added != 1 else ''}.")
+        if folders_added:
+            self._log(
+                f"Added {folders_added} folder{'s' if folders_added != 1 else ''}.")
+        elif not added and not skipped and not files:
+            if any(p.is_dir() for p in paths) and not self.settings.show_empty_folders:
+                self._log(
+                    "No ROMs found. Empty folders are hidden; turn them on in "
+                    "Settings > General.")
+            else:
+                self._log(f"No recognised ROMs or folders in {paths[0]}" if paths else
+                          "Nothing to add.")
         for reason in skipped:
             self._log(f"Skipped {reason}")
         if files and not added and not skipped:
@@ -559,7 +580,9 @@ class MainWindow(QMainWindow):
     def _on_job_started(self, row: int) -> None:
         self._current_percent = 0
         self.queue.update_status(row, "Running")
-        self.queue.scrollToItem(self.queue.item(row, 0))
+        node = self.queue.file_at(row)
+        if node is not None:
+            self.queue.scrollToItem(node)
 
     def _on_job_progress(self, row: int, percent: int) -> None:
         self._current_percent = percent

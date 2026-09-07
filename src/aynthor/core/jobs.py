@@ -102,10 +102,12 @@ def build_jobs(
         if output is None:
             continue
 
-        try:
-            input_size = item.path.stat().st_size
-        except OSError:
-            input_size = 0
+        input_size = item.source_bytes if item.source_bytes > 0 else 0
+        if input_size <= 0:
+            try:
+                input_size = item.path.stat().st_size
+            except OSError:
+                input_size = 0
 
         jobs.append((
             row,
@@ -114,6 +116,7 @@ def build_jobs(
                 output_path=_absolute(output),
                 format=item.format,
                 options=job_options(settings, item),
+                member=item.member,
                 input_size=input_size,
             ),
         ))

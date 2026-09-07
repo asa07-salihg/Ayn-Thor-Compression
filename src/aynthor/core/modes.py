@@ -10,6 +10,9 @@ Why
     Formats with one direction (WUA, Decrypt 3DS, NDS trim) declare exactly one
     entry, so nothing offers a reverse that does not exist.
 
+    A RAR/ZIP that was peeked into an NSZ row still offers Unzip (extract the
+    member, do not compress), not Decompress — that word is for containers.
+
 Used by
     `ui.queue_view` (the Becomes cell and its menu),
     `ui.option_panels.BaseFormatPanel`.
@@ -21,8 +24,10 @@ Reference
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 
 from aynthor.core.models import CompressionFormat, ConversionMode
+from aynthor.core.unpack import is_archive
 
 
 @dataclass(frozen=True)
@@ -67,3 +72,56 @@ FORMAT_MODES: dict[CompressionFormat, tuple[ModeInfo, ...]] = {
         ModeInfo(ConversionMode.COMPRESS, "-> Decrypted", "Decrypt"),
     ),
 }
+
+
+def source_is_archive(path: Path, member: str = "") -> bool:
+    """True when the queued file is (or came from) a zip/7z/rar."""
+    return bool(member) or is_archive(path)
+
+
+def reverse_verb(fmt: CompressionFormat, *, from_archive: bool = False) -> str:
+    """Menu label for the reverse action: Unzip vs Decompress."""
+    if from_archive:
+        # Peeked RAR/ZIP rows already are the inner ROM; Move vs convert only.
+        return "Move"
+    if fmt is CompressionFormat.SEVEN_ZIP:
+        return "Unzip"
+    for info in FORMAT_MODES.get(fmt, ()):
+        if info.mode is ConversionMode.DECOMPRESS:
+            return info.description
+    return "Decompress"
+
+
+def reverse_mode(fmt: CompressionFormat, *, from_archive: bool = False) -> ConversionMode:
+    """What selecting Unzip/Decompress should set on the row.
+
+    Archive members are extracted automatically at run time; the reverse for
+    them is Move (place the ROM). Loose containers use DECOMPRESS.
+    """
+    if from_archive:
+        return ConversionMode.MOVE
+    return ConversionMode.DECOMPRESS
+
+
+def becomes_label(
+    fmt: CompressionFormat | None,
+    mode: ConversionMode,
+    *,
+    from_archive: bool = False,
+    intent: str = "",
+) -> str:
+    """What the Becomes column shows for this row."""
+    if mode is ConversionMode.MOVE:
+        return "Move"
+    if fmt is None:
+        return "?"
+    if mode is ConversionMode.DECOMPRESS:
+        return reverse_verb(fmt, from_archive=from_archive)
+    return ""
+
+
+def supports_reverse(fmt: CompressionFormat, *, from_archive: bool = False) -> bool:
+    # Peeked archive rows: Move only + convert. No separate Unzip action.
+    if from_archive:
+        return False
+    return any(m.mode is ConversionMode.DECOMPRESS for m in FORMAT_MODES.get(fmt, ()))

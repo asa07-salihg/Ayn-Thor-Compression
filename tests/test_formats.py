@@ -72,6 +72,26 @@ def test_known_extensions_covers_the_catalogue():
     assert all(ext.startswith(".") for ext in extensions)
 
 
+def test_add_files_filter_puts_archives_first_so_windows_does_not_hide_them():
+    """The native picker truncates a long wildcard list from the end.
+    `.zip` was last alphabetically, so Add files showed 7z and an empty
+    folder of zips."""
+    from aynthor.core.formats import file_dialog_filter
+
+    text = file_dialog_filter()
+    first = text.split(";;")[0]
+    assert first.startswith("Archives")
+    assert "*.zip" in first and "*.7z" in first and "*.rar" in first
+    assert len(first) < 80
+    assert "All files (*)" in text
+    for ext in known_extensions():
+        assert f"*{ext}" in text
+
+
+def test_known_extensions_include_rar_wrappers():
+    assert ".rar" in known_extensions()
+
+
 @pytest.mark.parametrize(
     ("source", "target", "expected"),
     [

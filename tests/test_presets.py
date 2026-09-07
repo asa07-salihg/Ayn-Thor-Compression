@@ -49,6 +49,20 @@ def test_iso_with_no_folder_hint_falls_back_to_ps2():
     assert result.format is CompressionFormat.CHD
 
 
+def test_zip_in_snes_follows_the_folder_not_arcade():
+    """`.zip` alone means FBNeo, but a file in `snes/` is a cartridge dump."""
+    result = detect_platform_format(Path("/ROMs/snes/Mario.zip"))
+    assert result.platform == "snes"
+    assert result.format is CompressionFormat.SEVEN_ZIP
+    assert result.tool_options.get("archive_type") == "7z"
+
+
+def test_zip_in_fbneo_stays_an_arcade_romset():
+    result = detect_platform_format(Path("/ROMs/fbneo/kof97.zip"))
+    assert result.platform == "fbneo"
+    assert result.tool_options.get("archive_type") == "zip"
+
+
 def test_n64_is_skipped_with_a_reason():
     """z64 is already the most compatible form; compressing it helps nobody."""
     result = detect_platform_format(Path("Mario 64.z64"))

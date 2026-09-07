@@ -19,6 +19,7 @@ Reference
 from __future__ import annotations
 
 import re
+import shutil
 import subprocess
 import threading
 from abc import ABC, abstractmethod
@@ -44,6 +45,120 @@ def parse_progress(line: str) -> int | None:
 
 def is_decompress(job: ConversionJob) -> bool:
     return job.options.get("mode") == ConversionMode.DECOMPRESS.value
+
+
+def place_file(
+    job: ConversionJob,
+    on_progress: Callable[[int], None] | None = None,
+) -> tuple[bool, str]:
+    """Copy the input next to where the converter would have written it.
+
+    Used when the file is already the container this platform wants and only
+    the folder differs: `snes/Game.7z` becoming `snes/Game.7z/Game.7z`.
+    Archiving it again would nest a 7z inside a 7z; compressing a CHD to CHD
+    would just fail. With delete-source on, the runner turns this into a move.
+
+    On Windows the folder cannot be created while a file of the same name
+    still sits there (`Game.chd` file → `Game.chd/` directory). That case
+    moves the file aside, creates the folder, then moves it in.
+
+    `on_progress` is required for large Moves: unpacking a RAR ends at 99%,
+    and a silent copy of a 14 GB NSP looks frozen until the copy finishes.
+    """
+    src = job.input_path
+    dst = job.output_path
+    try:
+        if dst.resolve() == src.resolve():
+            if on_progress:
+                on_progress(100)
+            return True, "Already in place."
+    except OSError:
+        pass
+
+    parent = dst.parent
+    try:
+        if parent.exists() and parent.is_file():
+            try:
+                same = parent.resolve() == src.resolve()
+            except OSError:
+                same = parent == src
+            if not same:
+                return False, (
+                    f"Could not create game folder: {parent.name} is already a file.")
+            return _fold_into_own_name(src, dst, on_progress)
+        parent.mkdir(parents=True, exist_ok=True)
+        _copy_with_progress(src, dst, on_progress)
+    except OSError as exc:
+        return False, f"Could not copy into its folder: {exc}"
+    return True, "Placed in its game folder."
+
+
+def _fold_into_own_name(
+    src: Path,
+    dst: Path,
+    on_progress: Callable[[int], None] | None = None,
+) -> tuple[bool, str]:
+    """`Game.chd` (file) → `Game.chd/Game.chd` on a filesystem that forbids
+    creating a directory over an existing file of the same path."""
+    aside = src.with_name(src.name + ".aynthor-placing")
+    n = 0
+    while aside.exists():
+        n += 1
+        aside = src.with_name(f"{src.name}.aynthor-placing-{n}")
+    folder = dst.parent
+    try:
+        src.rename(aside)
+        folder.mkdir(parents=True, exist_ok=False)
+        aside.rename(dst)
+    except OSError as exc:
+        _rollback_fold(aside, src, folder)
+        return False, f"Could not copy into its folder: {exc}"
+    if on_progress:
+        on_progress(100)
+    return True, "Placed in its game folder."
+
+
+_COPY_CHUNK = 8 * 1024 * 1024
+
+
+def _copy_with_progress(
+    src: Path,
+    dst: Path,
+    on_progress: Callable[[int], None] | None = None,
+) -> None:
+    """Copy `src` to `dst`, reporting 0-100. Always copies; delete-source is
+    the runner's job, so a same-volume rename here would surprise callers."""
+    total = src.stat().st_size
+    copied = 0
+    last = -1
+    with src.open("rb") as incoming, dst.open("wb") as outgoing:
+        while True:
+            chunk = incoming.read(_COPY_CHUNK)
+            if not chunk:
+                break
+            outgoing.write(chunk)
+            copied += len(chunk)
+            if on_progress and total > 0:
+                pct = min(99, int(copied * 100 / total))
+                if pct != last:
+                    last = pct
+                    on_progress(pct)
+    shutil.copystat(src, dst)
+    if on_progress:
+        on_progress(100)
+
+
+def _rollback_fold(aside: Path, src: Path, folder: Path) -> None:
+    try:
+        if folder.is_dir() and not any(folder.iterdir()):
+            folder.rmdir()
+    except OSError:
+        pass
+    try:
+        if aside.exists() and not src.exists():
+            aside.rename(src)
+    except OSError:
+        pass
 
 
 def failure(result: subprocess.CompletedProcess[str]) -> tuple[bool, str]:

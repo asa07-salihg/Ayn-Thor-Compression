@@ -79,6 +79,45 @@ for _platform, _folders in ESDE_PLATFORM_FOLDERS.items():
     for _folder in _folders[1:]:
         FOLDER_TO_PLATFORM.setdefault(_folder, _platform)
 
+
+# Labels for platforms the converter table does not cover. The Settings
+# presets supply the rest.
+PLATFORM_LABELS: dict[str, str] = {
+    "n64": "Nintendo 64",
+    "windows": "Windows",
+    "steam": "Steam",
+}
+
+# Platform cell menu, grouped the way a card is laid out rather than A-Z.
+PLATFORM_MENU_GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("Sony", ("psx", "ps2", "psp")),
+    ("Nintendo", ("gb", "gbc", "gba", "snes", "n64", "nds", "gc", "wii", "wiiu",
+                  "n3ds", "switch")),
+    ("Sega", ("sg-1000", "mastersystem", "megadrive", "gamegear", "sega32x",
+              "segacd", "saturn", "dreamcast")),
+    ("NEC", ("pcengine", "pcenginecd", "pcfx")),
+    ("Arcade", ("fbneo", "mame", "arcade", "neogeocd")),
+    ("Other", ("3do", "windows", "steam")),
+)
+
+
+def is_platform_folder(path: Path) -> bool:
+    """A directory ES-DE uses as a system folder (`psx`, `sfc`, `neogeo`)."""
+    return path.name.lower() in FOLDER_TO_PLATFORM
+
+
+def platform_from_path(path: Path) -> str:
+    """The ES-DE platform a file sits in, from a folder name in its path.
+
+    Empty when nothing in the path is a known platform folder: a download
+    sitting in `Downloads` has no platform of its own.
+    """
+    for part in path.parts:
+        mapped = FOLDER_TO_PLATFORM.get(part.lower())
+        if mapped:
+            return mapped
+    return ""
+
 # Platforms that get compressed in the Ayn Thor list
 COMPRESSIBLE_PLATFORMS: frozenset[str] = frozenset({
     "psx", "ps2", "psp", "dreamcast", "gc", "wii", "n3ds", "switch",

@@ -757,11 +757,20 @@ class GeneralPanel(QWidget):
             "rather than redoing hours of work.")
         layout.addRow("If the output exists:", self.conflict_combo)
 
-        self.switch_subdirs = QCheckBox("Give each Switch game its own folder")
-        self.switch_subdirs.setToolTip(
-            "Keeps a title's base game, update and DLC together, which is how\n"
-            "an installer expects to find them.")
-        layout.addRow("", self.switch_subdirs)
+        self.game_folders = QCheckBox("Put each game in its own folder")
+        self.game_folders.setToolTip(
+            "Writes Game.chd/Game.chd, which is how ES-DE and Cocoon find a\n"
+            "title when they search subfolders. Extra discs, updates and DLC\n"
+            "sit beside the primary file.")
+        layout.addRow("", self.game_folders)
+
+        self.show_empty_folders = QCheckBox("Show empty folders in the queue")
+        self.show_empty_folders.setToolTip(
+            "Off by default. When on, empty platform folders (psx, snes, ...)\n"
+            "and empty Game.chd directories appear as drop targets after you\n"
+            "add a folder. Turn it on, then add the folder again if the queue\n"
+            "is already filled.")
+        layout.addRow("", self.show_empty_folders)
 
         self.delete_source = QCheckBox("Delete the source after converting")
         self.delete_source.setToolTip(
@@ -773,7 +782,8 @@ class GeneralPanel(QWidget):
             (self.output_edit, "textChanged"),
             (self.esde_edit, "textChanged"),
             (self.conflict_combo, "currentIndexChanged"),
-            (self.switch_subdirs, "toggled"),
+            (self.game_folders, "toggled"),
+            (self.show_empty_folders, "toggled"),
             (self.delete_source, "toggled"),
         ):
             getattr(widget, signal).connect(lambda *_: self.changed.emit())
@@ -792,7 +802,7 @@ class GeneralPanel(QWidget):
 
     def load(self, settings: FormatSettings) -> None:
         widgets = (self.output_edit, self.esde_edit, self.conflict_combo,
-                   self.switch_subdirs, self.delete_source)
+                   self.game_folders, self.show_empty_folders, self.delete_source)
         for widget in widgets:
             widget.blockSignals(True)
         self.output_edit.setText(settings.output_dir)
@@ -800,7 +810,8 @@ class GeneralPanel(QWidget):
         index = self.conflict_combo.findData(settings.on_conflict)
         if index >= 0:
             self.conflict_combo.setCurrentIndex(index)
-        self.switch_subdirs.setChecked(settings.switch_game_subdirs)
+        self.game_folders.setChecked(settings.game_folders)
+        self.show_empty_folders.setChecked(settings.show_empty_folders)
         self.delete_source.setChecked(settings.delete_source)
         for widget in widgets:
             widget.blockSignals(False)
@@ -809,5 +820,6 @@ class GeneralPanel(QWidget):
         settings.output_dir = self.output_edit.text().strip()
         settings.esde_root = self.esde_edit.text().strip()
         settings.on_conflict = self.conflict_combo.currentData()
-        settings.switch_game_subdirs = self.switch_subdirs.isChecked()
+        settings.game_folders = self.game_folders.isChecked()
+        settings.show_empty_folders = self.show_empty_folders.isChecked()
         settings.delete_source = self.delete_source.isChecked()

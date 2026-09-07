@@ -192,7 +192,33 @@ def natural_mode(path: Path, target: CompressionFormat) -> ConversionMode:
 
 def known_extensions() -> set[str]:
     """Every extension the app recognises, for folder scans and file dialogs."""
-    return {ext for info in FORMAT_CATALOG for ext in info.extensions}
+    return {ext for info in FORMAT_CATALOG for ext in info.extensions} | {".rar"}
+
+
+def file_dialog_filter() -> str:
+    """What Add files lists in the picker.
+
+    Windows' native dialog truncates a long wildcard group from the end.
+    The old filter was every extension alphabetically, so `.7z` (early)
+    still matched and `.zip` (near the end) vanished: a folder of zips
+    looked empty. Archives are their own short group and come first.
+    """
+    claimed: set[str] = set()
+    parts: list[str] = []
+
+    def add(label: str, extensions: tuple[str, ...] | list[str]) -> None:
+        unique = [ext for ext in extensions if ext not in claimed]
+        if not unique:
+            return
+        claimed.update(unique)
+        patterns = " ".join(f"*{ext}" for ext in unique)
+        parts.append(f"{label} ({patterns})")
+
+    add("Archives", (".zip", ".7z", ".rar"))
+    for info in FORMAT_CATALOG:
+        add(info.label, info.extensions)
+    parts.append("All files (*)")
+    return ";;".join(parts)
 
 
 # --------------------------------------------------------------- output naming
@@ -230,6 +256,9 @@ def suggest_output_path(
     `options` are the row's tool options, because for 7-Zip and maxcso they are
     what decides which container gets written, and the extension has to say so.
     """
+    if mode == ConversionMode.MOVE:
+        # Keep the source name; output_for still places it in the game folder.
+        return input_path
     if mode == ConversionMode.DECOMPRESS:
         return _decompressed_path(input_path, target)
 

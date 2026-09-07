@@ -1,22 +1,15 @@
 """Tell a Switch base game, update and DLC apart, and group them.
 
 Why
-    A Switch title arrives as several files that must stay together: the base
-    game, an update, and any number of DLC. Compressing them is fine, but a
-    user who ends up with an update and no base has a game that will not
-    install, so the queue shows what each file is and warns when a set is
-    incomplete.
+    Base and update are easy (title id, or the words update/dlc/pack). The
+    only grouping rule that matters after that: once a base title is known,
+    every file whose name starts with that title belongs in the same tree.
 
-    Two signals are used, in order of reliability. A title id in the filename
-    is definitive: the Switch encodes content type in its last three hex
-    digits (000 base, 800 update, anything else DLC). Failing that, the
-    filename markers scene groups and dumpers actually use are matched. A file
-    with neither is assumed to be a base game, because that is what an
-    untagged dump almost always is.
+    Dump names use underscores (`pack_dlc`). Those become spaces first so
+    markers and headers can be read.
 
 Used by
-    `core.romlist` (collecting a game's whole set), `ui.queue_view` (the Game
-    and Type columns), `ui.main_window` (the incomplete-set warnings).
+    `core.romlist`, `ui.queue_view`, `ui.main_window`.
 
 Reference
     Title id ranges: https://switchbrew.org/wiki/Title_list
@@ -33,37 +26,26 @@ SWITCH_EXTENSIONS = frozenset({".nsp", ".xci", ".nsz", ".xcz"})
 
 _TITLE_ID = re.compile(r"0100[0-9A-Fa-f]{12}", re.I)
 
-_UPDATE_MARKERS = (
-    re.compile(r"\[UPD(?:ATE)?\]", re.I),
-    re.compile(r"\(update\)", re.I),
-    re.compile(r"\bupdate\b", re.I),
-    re.compile(r"\[patch\]", re.I),
-    re.compile(r"\bpatch\b", re.I),
-    re.compile(r"\bv\d+(?:\.\d+){1,3}\b", re.I),
+_UPDATE_WORD = re.compile(
+    r"\b(update|upd|patch)\b|\bv\d+(?:\.\d+){1,3}\b|\b\d+\.\d+(?:\.\d+){1,2}\b",
+    re.I,
+)
+_DLC_WORD = re.compile(
+    r"\b(dlc|aoc|pack|expansion|freebie|costume|season\s+pass)\b|"
+    r"\bset\s*(?:\d+|[a-z])\b",
+    re.I,
 )
 
-_DLC_MARKERS = (
-    re.compile(r"\[DLC\]", re.I),
-    re.compile(r"\[AOC\]", re.I),
-    re.compile(r"\bDLC\b", re.I),
-    re.compile(r"\bAOC\b", re.I),
-    re.compile(r"\bexpansion\b", re.I),
-    re.compile(r"\bseason\s*pass\b", re.I),
-)
-
-# A bare "v0" or "v65536" is the NSP's version field, not a marker of what the
-# file is: detection must not treat it as an update (every base game carries
-# v0), but grouping must remove it, or a base game and its update normalise to
-# two different names and never group together.
-_VERSION_TOKEN = re.compile(r"\bv\d+\b", re.I)
-
-_STRIP_MARKERS = (
-    re.compile(r"\[base\]", re.I),
-    re.compile(r"\(base\)", re.I),
-    re.compile(r"\bbase\s+game\b", re.I),
-    _VERSION_TOKEN,
-    *_UPDATE_MARKERS,
-    *_DLC_MARKERS,
+# Strip only a short pack tail at the end (one brand word + set/pack, or dlc).
+_TRAILING_JUNK = re.compile(
+    r"\s+(?:"
+    r"\S+\s+cover\s+set\s*(?:\d+|[a-z])|"
+    r"\S+\s+set\s*(?:\d+|[a-z])|"
+    r"\S+\s+pack|"
+    r"(?:dlc|aoc|update|upd|patch|expansion|costume|freebie|"
+    r"season\s+pass|base\s+game|base)"
+    r")\b.*$",
+    re.I,
 )
 
 
@@ -86,16 +68,28 @@ def is_switch_rom(path: Path) -> bool:
     return path.suffix.lower() in SWITCH_EXTENSIONS
 
 
-def detect_content_type(path: Path) -> ContentType:
-    name = path.stem
-    for marker in _UPDATE_MARKERS:
-        if marker.search(name):
-            return ContentType.UPDATE
-    for marker in _DLC_MARKERS:
-        if marker.search(name):
-            return ContentType.DLC
+def title_family(path: Path) -> str:
+    found = _TITLE_ID.search(path.stem)
+    if not found:
+        return ""
+    return found.group().upper()[:13]
 
-    tid = _TITLE_ID.search(name)
+
+def _readable(name: str) -> str:
+    """`pack_dlc` / `v-ys_x` → words. Underscore is a word char; spaces are not."""
+    name = re.sub(r"[_\-]+", " ", name)
+    name = re.sub(r"[\[\](){}]+", " ", name)
+    return re.sub(r"\s+", " ", name).strip(" .-_")
+
+
+def detect_content_type(path: Path) -> ContentType:
+    name = _readable(path.stem)
+    if _UPDATE_WORD.search(name):
+        return ContentType.UPDATE
+    if _DLC_WORD.search(name):
+        return ContentType.DLC
+
+    tid = _TITLE_ID.search(path.stem)
     if tid:
         tid_val = tid.group().upper()
         if tid_val.endswith("800"):
@@ -108,16 +102,74 @@ def detect_content_type(path: Path) -> ContentType:
 
 
 def normalize_game_name(path: Path) -> str:
-    name = path.stem
+    name = _readable(path.stem)
     name = _TITLE_ID.sub("", name)
-    for marker in _STRIP_MARKERS:
-        name = marker.sub("", name)
-    name = re.sub(r"\bpack\s*\d+\b", "", name, flags=re.I)
-    name = re.sub(r"\bdlc\s*\d*\b", "", name, flags=re.I)
-    name = re.sub(r"[\[\](){}]+", " ", name)
-    name = re.sub(r"[_\-]+", " ", name)
+    name = re.sub(r"^v\d*\s+", "", name, flags=re.I)
+    name = re.sub(r"\bv\d+\b", "", name, flags=re.I)
+    name = re.sub(r"\b\d+\.\d+(?:\.\d+)*\b", "", name)
     name = re.sub(r"\s+", " ", name).strip(" .-_")
-    return name or path.stem
+    name = _TRAILING_JUNK.sub("", name).strip(" .-_")
+    name = _drop_repeated_tail(name)
+    return name or _readable(path.stem) or path.stem
+
+
+def _drop_repeated_tail(name: str) -> str:
+    """Collapse a title that dumps repeat in the name.
+
+    `… Cold Steel III Cold Steel III` (adjacent block) and
+    `ys x nordics ys x …` (opening title echoed later).
+    """
+    words = name.split()
+    n = len(words)
+    if n < 3:
+        return name
+    for size in range(n // 2, 0, -1):
+        for start in range(0, n - 2 * size + 1):
+            if words[start:start + size] == words[start + size:start + 2 * size]:
+                return " ".join(words[: start + size] + words[start + 2 * size :])
+    for size in range(min(n // 2, 8), 0, -1):
+        prefix = words[:size]
+        for start in range(size, n - size + 1):
+            if words[start:start + size] == prefix:
+                return " ".join(words[:start])
+        for shorter in range(1, size):
+            echo = words[:shorter]
+            for start in range(size, n - shorter + 1):
+                if words[start:start + shorter] == echo:
+                    return " ".join(words[:start])
+    return name
+
+
+def titles_share_game(left: str, right: str) -> bool:
+    """Same game when one title is the header (prefix) of the other.
+
+    That is the whole rule: base `Ys X Nordics` owns every
+    `Ys X Nordics … whatever pack dlc` name.
+    """
+    a, b = left.strip(), right.strip()
+    if not a or not b:
+        return False
+    al, bl = a.casefold(), b.casefold()
+    return al == bl or al.startswith(bl + " ") or bl.startswith(al + " ")
+
+
+def canonical_title(*names: str) -> str:
+    """Shortest title among names that share a header."""
+    cleaned = [n.strip() for n in names if n and n.strip()]
+    if not cleaned:
+        return ""
+    return min(cleaned, key=len)
+
+
+def common_word_prefix(left: str, right: str) -> str:
+    a = left.casefold().split()
+    b = right.casefold().split()
+    out: list[str] = []
+    for x, y in zip(a, b, strict=False):
+        if x != y:
+            break
+        out.append(x)
+    return " ".join(out)
 
 
 def sort_switch_files(files: list[Path]) -> list[Path]:
@@ -128,12 +180,40 @@ def sort_switch_files(files: list[Path]) -> list[Path]:
 
 
 def group_switch_files(files: list[Path]) -> dict[str, list[Path]]:
-    groups: dict[str, list[Path]] = {}
+    """Cluster by title id, else by header: shortest title wins as the key."""
+    by_id: dict[str, list[Path]] = {}
+    no_id: list[Path] = []
     for path in files:
         if not is_switch_rom(path):
             continue
-        key = normalize_game_name(path)
-        groups.setdefault(key, []).append(path)
+        family = title_family(path)
+        if family:
+            by_id.setdefault(family, []).append(path)
+        else:
+            no_id.append(path)
+
+    groups: dict[str, list[Path]] = {}
+    for members in by_id.values():
+        label = min((normalize_game_name(p) for p in members), key=len)
+        groups.setdefault(label, []).extend(members)
+
+    # Sort shortest title first so a base header absorbs longer DLC names.
+    pending = sorted(no_id, key=lambda p: len(normalize_game_name(p)))
+    for path in pending:
+        label = normalize_game_name(path)
+        parent = next(
+            (existing for existing in groups if titles_share_game(label, existing)),
+            None,
+        )
+        if parent is None:
+            groups[label] = [path]
+            continue
+        key = canonical_title(parent, label) or parent
+        if key != parent:
+            groups.setdefault(key, []).extend(groups.pop(parent))
+            parent = key
+        groups.setdefault(parent, []).append(path)
+
     for key in groups:
         groups[key] = sort_switch_files(groups[key])
     return groups

@@ -17,7 +17,7 @@ Reference
 
 from __future__ import annotations
 
-from aynthor.core.converters.base import BaseConverter, failure, is_decompress
+from aynthor.core.converters.base import BaseConverter, failure, is_decompress, place_file
 from aynthor.core.models import CompressionFormat, ConversionJob
 from aynthor.core.system import run_tool, tool_path
 
@@ -29,6 +29,15 @@ class SevenZipConverter(BaseConverter):
         error = self.validate(job)
         if error:
             return False, error
+
+        if (not is_decompress(job)
+                and job.input_path.suffix.lower() == job.output_path.suffix.lower()):
+            # Already the container this platform wants, and only the folder
+            # differs: the game folder layout asked for `snes/Game.7z/Game.7z`
+            # and the file sits loose in `snes/`. Archiving it again would put
+            # a 7z inside a 7z, so it is copied into place instead. With
+            # delete-source on, the runner turns that into a move.
+            return place_file(job)
 
         seven_zip = tool_path("7za")
         if not seven_zip.is_file():

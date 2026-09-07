@@ -45,13 +45,14 @@ class CompressionFormat(str, Enum):
 class ConversionMode(str, Enum):
     """Direction of travel.
 
-    DECOMPRESS is labelled "Open" in the interface: for most of these formats
-    the user is not unpacking an archive, they are getting their disc image
-    back so another tool can read it.
+    COMPRESS packs into the platform container. DECOMPRESS reverses a
+    container (chd→cue, nsz→nsp) or unzips an archive (7z/zip). MOVE copies
+    the file into its game folder with no conversion.
     """
 
     COMPRESS = "compress"
     DECOMPRESS = "decompress"
+    MOVE = "move"
 
 
 @dataclass
@@ -68,6 +69,10 @@ class ConversionJob:
     output_path: Path
     format: CompressionFormat
     options: dict = field(default_factory=dict)
+    # When set, `input_path` is an archive and this is the POSIX path of the
+    # ROM inside it. The runner unpacks the archive and hands the converter the
+    # extracted file; the converter never learns there was an archive at all.
+    member: str = ""
     status: str = "pending"
     message: str = ""
     input_size: int = 0
@@ -93,5 +98,26 @@ class QueueItem:
     platform: str = ""
     game_group: str = ""
     content_type: str = ""
+    # The ROM inside `path` when `path` is an archive that has to be opened
+    # before the converter can read it. POSIX separators, as archives store.
+    member: str = ""
+    # Bytes the Size column and savings math should use. For an archive
+    # member this is the declared size of that member, not the whole archive.
+    # Zero means "unknown — fall back to path.stat()".
+    source_bytes: int = 0
+    # What the File column shows. Empty means the file's own name; a folder
+    # that was added as a whole labels its rows `folder/sub/file` instead.
+    label: str = ""
     status: str = "Waiting"
     message: str = ""
+
+    @property
+    def source_name(self) -> str:
+        """The name the output is derived from: the member's when there is
+        one, otherwise the file's own."""
+        return self.member.rsplit("/", 1)[-1] if self.member else self.path.name
+
+    @property
+    def display_name(self) -> str:
+        base = self.label or self.path.name
+        return f"{base} [{self.source_name}]" if self.member else base
