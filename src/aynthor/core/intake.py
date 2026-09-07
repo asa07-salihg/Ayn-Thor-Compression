@@ -151,7 +151,7 @@ def _one(
     output = output_for(path, fmt, mode, settings, options, platform, member)
 
     if _should_place(source, fmt, options, settings, member):
-        mode = ConversionMode.COMPRESS
+        mode = ConversionMode.MOVE
         output = output_for(path, fmt, mode, settings, options, platform, member)
 
     if (not member and is_archive(path) and fmt is not CompressionFormat.SEVEN_ZIP):

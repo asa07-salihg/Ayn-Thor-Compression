@@ -226,7 +226,7 @@ def test_extract_member_to_writes_straight_to_the_destination(tmp_path: Path):
 
 def test_extract_member_to_handles_brackets_in_switch_names(tmp_path: Path):
     """7-Zip treats [0100…] as a wildcard mask and would extract nothing."""
-    from aynthor.core.unpack import extract_member_to, _safe_7z_mask
+    from aynthor.core.unpack import _safe_7z_mask, extract_member_to
 
     member = (
         "Ys X_ Nordics (NSP)(US)(Update 1.0.3)/"

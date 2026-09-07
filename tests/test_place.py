@@ -1,4 +1,4 @@
-﻿"""place_file: copy or in-place fold into a game folder."""
+"""place_file: copy or in-place fold into a game folder."""
 
 from __future__ import annotations
 

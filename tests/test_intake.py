@@ -62,7 +62,7 @@ def test_a_loose_7z_in_snes_is_copied_into_its_game_folder(tmp_path: Path):
     row = items[0]
     assert row.member == ""
     assert row.format is CompressionFormat.SEVEN_ZIP
-    assert row.mode is ConversionMode.COMPRESS
+    assert row.mode is ConversionMode.MOVE
     assert row.output == (tmp_path / "ROMs" / "snes" / "Front Mission.7z"
                           / "Front Mission.7z")
 

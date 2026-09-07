@@ -3,6 +3,13 @@
 Notable changes, newest first. Versions follow
 [semantic versioning](https://semver.org/).
 
+## 1.3.1
+
+- **CI fixes for the 1.3.0 suite.** Import sort in the unpack test, a UTF-8
+  BOM on `test_place.py`, and UI smoke isolation so one test's
+  `game_folders=True` no longer leaks into later windows. Files that only
+  need placing into a game folder now queue as Move.
+
 ## 1.3.0
 
 - **Switch Update/DLC stay under an XCI base.** When the base is

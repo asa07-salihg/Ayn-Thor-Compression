@@ -73,6 +73,18 @@ def app(tmp_path_factory) -> QApplication:
     return instance
 
 
+@pytest.fixture(autouse=True)
+def _clear_saved_settings(app):
+    """MainWindow.closeEvent persists settings; one test must not leak into the next."""
+    from PySide6.QtCore import QSettings
+
+    from aynthor.ui.state import APPLICATION, ORGANISATION
+
+    QSettings(ORGANISATION, APPLICATION).clear()
+    yield
+    QSettings(ORGANISATION, APPLICATION).clear()
+
+
 @pytest.fixture()
 def settings() -> FormatSettings:
     return FormatSettings()
