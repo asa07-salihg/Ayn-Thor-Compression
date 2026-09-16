@@ -98,6 +98,33 @@ def _parse_table_row(line: str) -> tuple[str, str, str] | None:
     return game, platform, target
 
 
+def _read_text(path: Path) -> str:
+    """The file's text, whichever way Notepad saved it.
+
+    Why
+        These lists are typed on Windows and saved from Notepad, which
+        offers UTF-8, "UTF-8 with BOM" and "Unicode" (UTF-16 LE). Reading
+        every one of them as plain UTF-8 meant the byte order mark survived
+        as a character: it sat in front of the first line's leading `|`, so
+        the first entry of a table was dropped, and in an arrow list it
+        became the first letter of the game's name and then part of the
+        folder name written to the card. A UTF-16 file decoded to mojibake
+        and produced no entries at all -- "Nothing to import" for a file
+        full of games.
+    """
+    data = path.read_bytes()
+    for bom, encoding in (
+        (b"\xff\xfe\x00\x00", "utf-32"),
+        (b"\x00\x00\xfe\xff", "utf-32"),
+        (b"\xff\xfe", "utf-16"),
+        (b"\xfe\xff", "utf-16"),
+    ):
+        if data.startswith(bom):
+            return data.decode(encoding, errors="replace")
+    # `utf-8-sig` drops a UTF-8 BOM and is identical to `utf-8` without one.
+    return data.decode("utf-8-sig", errors="replace")
+
+
 def parse_list_file(path: Path) -> list[ListEntry]:
     """Read a list file. Unreadable lines are skipped rather than fatal.
 
@@ -106,7 +133,7 @@ def parse_list_file(path: Path) -> list[ListEntry]:
     the feature unusable.
     """
     entries: list[ListEntry] = []
-    text = path.read_text(encoding="utf-8", errors="replace")
+    text = _read_text(path)
 
     for line_no, raw in enumerate(text.splitlines(), 1):
         line = raw.strip()

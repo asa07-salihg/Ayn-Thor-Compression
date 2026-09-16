@@ -63,6 +63,16 @@ class SevenZipConverter(BaseConverter):
             threads = opts.get("threads", 0)
             args.append(f"-mmt={threads}" if threads else "-mmt=on")
             args += [str(job.output_path), str(job.input_path)]
+            # `a` is add-or-update, not create. Pointed at an archive that is
+            # already there it merges the new ROM in beside the old one, so
+            # "overwrite" produced a 7z holding two games and a saving figure
+            # measured against the pair. The conflict policy has already
+            # decided this path may be written, so the old file goes first.
+            if job.output_path.exists():
+                try:
+                    job.output_path.unlink()
+                except OSError as exc:
+                    return False, f"Could not replace {job.output_path.name}: {exc}"
 
         result = run_tool(seven_zip, args, on_output=self.emit)
         return (True, "Archive done.") if result.returncode == 0 else failure(result)

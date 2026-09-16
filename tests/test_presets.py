@@ -190,3 +190,71 @@ def test_detected_options_are_a_copy_not_the_preset_itself():
     first["hunk_size"] = 9999
     second = detect_platform_format(Path("/ROMs/ps2/b.iso")).tool_options
     assert second["hunk_size"] == 2048
+
+
+# --------------------------------------------------------------------------
+# A container extension names a container, not a system. Regressions from the
+# 1.3.2 audit.
+
+
+@pytest.mark.parametrize(
+    ("path", "platform", "fmt"),
+    [
+        # Every CD system dumps to cue/bin, and `.cue` was hardcoded to psx, so
+        # a Saturn or Sega CD disc was written into ROMs/psx with the PS2
+        # workaround flags on it.
+        ("ROMs/saturn/Panzer Dragoon Saga.cue", "saturn", CompressionFormat.CHD),
+        ("ROMs/segacd/Sonic CD.cue", "segacd", CompressionFormat.CHD),
+        ("ROMs/pcenginecd/Ys.cue", "pcenginecd", CompressionFormat.CHD),
+        ("ROMs/3do/Road Rash.cue", "3do", CompressionFormat.CHD),
+        # `.bin` is also the Mega Drive cartridge extension, so a cartridge was
+        # being handed to `chdman createcd`.
+        ("ROMs/megadrive/Sonic.bin", "megadrive", CompressionFormat.SEVEN_ZIP),
+        # The old behaviour is still right where it was right.
+        ("ROMs/psx/Final Fantasy VII (Disc 1).cue", "psx", CompressionFormat.CHD),
+        ("Downloads/Some Disc.cue", "psx", CompressionFormat.CHD),
+    ],
+)
+def test_the_folder_decides_a_container_extension(path, platform, fmt):
+    result = detect_platform_format(Path(path))
+    assert (result.platform, result.format) == (platform, fmt)
+
+
+@pytest.mark.parametrize(
+    ("name", "platform"),
+    [
+        ("ROMs/mastersystem/Sonic.sms", "mastersystem"),
+        ("ROMs/gamegear/Sonic.gg", "gamegear"),
+        ("ROMs/pcengine/Bonk.pce", "pcengine"),
+        ("ROMs/sega32x/Doom.32x", "sega32x"),
+        ("ROMs/sg-1000/Congo Bongo.sg", "sg-1000"),
+    ],
+)
+def test_every_cartridge_platform_can_be_reached_by_a_file(name, platform):
+    """These five had a preset and an ES-DE folder and no extension that led to
+    them, so dropping the file said "no format handles this extension"."""
+    result = detect_platform_format(Path(name))
+    assert result.platform == platform
+    assert result.format is CompressionFormat.SEVEN_ZIP
+    assert not result.skip
+
+
+@pytest.mark.parametrize("name", ["game.cso", "game.zso", "game.dax"])
+def test_an_already_compressed_file_is_not_fed_to_the_platform_compressor(name):
+    """The PSP preset is CHD, so a `.cso` was queued as a compress and handed
+    to `chdman createdvd`, which wraps the already-compressed bytes in a raw
+    DVD image rather than converting anything."""
+    from aynthor.core.formats import natural_mode
+    from aynthor.core.models import ConversionMode
+
+    result = detect_platform_format(Path(f"ROMs/psp/{name}"))
+    assert result.format is CompressionFormat.CSO
+    assert result.platform == "psp"
+    assert natural_mode(Path(name), result.format) is ConversionMode.DECOMPRESS
+
+
+def test_a_platform_that_matches_this_platforms_own_container_keeps_its_preset():
+    """A `.chd` in `psx` is still the PlayStation preset, with its options."""
+    result = detect_platform_format(Path("ROMs/psx/Game.chd"))
+    assert result.format is CompressionFormat.CHD
+    assert result.tool_options.get("chd_type") == "auto"

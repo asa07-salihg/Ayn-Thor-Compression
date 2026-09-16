@@ -19,6 +19,7 @@ Reference
 from __future__ import annotations
 
 import shutil
+from contextlib import suppress
 
 from aynthor.core.converters.base import BaseConverter, failure
 from aynthor.core.models import CompressionFormat, ConversionJob
@@ -42,7 +43,15 @@ class NdsTrimConverter(BaseConverter):
             # ndstrim only edits in place, so trimming to a different location
             # means copying there first and trimming the copy.
             target.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(job.input_path, target)
+            try:
+                shutil.copy2(job.input_path, target)
+            except OSError as exc:
+                # A copy that ran out of room left a truncated cart at the
+                # output path, and with the default Skip policy the next run
+                # dropped that row and never mentioned it again.
+                with suppress(OSError):
+                    target.unlink(missing_ok=True)
+                return False, f"Could not copy the cart before trimming: {exc}"
 
         result = run_tool(ndstrim, ["-i", str(target)], on_output=self.emit)
         return (True, "NDS trimmed.") if result.returncode == 0 else failure(result)

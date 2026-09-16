@@ -3,6 +3,54 @@
 Notable changes, newest first. Versions follow
 [semantic versioning](https://semver.org/).
 
+## 1.3.2
+
+Bug fixes. I went back over 1.3.1 and found these. Every one of them has a
+test now.
+
+- A cue sheet and its `.bin` tracks came in as four rows. Three handed a raw
+  track to chdman and all four wrote the same CHD, so only the last one
+  survived. Just the sheet gets a row now.
+- An archive holding several games named them all after the archive, so they
+  all wrote to one file. Two games out of three were gone.
+- Two rows could claim the same output path. Rename didn't stop it, which is
+  the one thing rename is for.
+- Saturn, Sega CD, PC Engine CD, Neo Geo CD, 3DO and PC-FX discs were written
+  into `ROMs/psx`, and a Mega Drive cartridge was handed to chdman.
+- Dropping a `.cso` queued it for compression to CHD. `.dax` could be written
+  and then not read back.
+- Picking a format in the menu changed rows that couldn't take it, so a SNES
+  cartridge could end up at chdman.
+- Switch DLC never joined its base game, and a base game with "pack" in its
+  name was read as DLC. The Jackbox Party Pack got merged with the next one.
+- NSZ wrote a file nobody had agreed on, and on rename it wrote over the file
+  the conflict policy had just stepped around.
+- A file joined to a folder already on the card was given the name of the ROM
+  sitting in there.
+- A zero-padded `(Disc 01)` wasn't read as disc one, so the folder had nothing
+  ES-DE could launch.
+- Delete the source never fired on a Move. The log claimed the output was
+  already there.
+- A copy that ran out of room left a half-written ROM at the destination, and
+  skip meant you never heard about it again.
+- 7-Zip merged into an existing archive instead of replacing it.
+- Renaming a game folder could stop halfway and leave it unlaunchable.
+- Turning on game folders made every already-correct ROM on a card fail.
+- Adding a file collapsed the whole queue tree.
+- A result for a row you had removed was painted onto some other row.
+- Files already on the card were counted in the footer as work.
+- Master System, Game Gear, PC Engine, 32X and SG-1000 had a preset and no
+  extension that reached it.
+- A folder on the way down could beat the real platform folder, so a ps2 ISO
+  under a folder called Steam lost its platform.
+- A list saved from Notepad as Unicode imported nothing, and one with a BOM
+  lost its first line.
+- A RAR that opened fine but held nothing useful told you to install 7-Zip.
+- A file whose name starts with a dash was read as a switch by 7-Zip and the
+  extraction was refused.
+- A title with a full stop in it lost everything after it when matched against
+  the card.
+
 ## 1.3.1
 
 - **CI fixes for the 1.3.0 suite.** Import sort in the unpack test, a UTF-8

@@ -231,3 +231,46 @@ def test_a_complete_set_is_not_flagged():
 def test_summarize_group_reads_as_a_sentence():
     summary = summarize_group([ContentType.BASE, ContentType.DLC, ContentType.DLC])
     assert summary == "Base + 2 DLC"
+
+
+def test_a_title_id_beats_a_word_that_is_part_of_the_name():
+    """The Jackbox Party Pack 8 is a base game whose name contains "pack".
+    Reading the whole title before the id typed it as DLC, which then cut the
+    name down to "The Jackbox", merged Pack 8 and Pack 9 into one folder and
+    warned about DLC with no base."""
+    from aynthor.core.switch import group_switch_files
+
+    eight = Path("The Jackbox Party Pack 8 [0100C5000EEC6000][v0].nsp")
+    nine = Path("The Jackbox Party Pack 9 [0100C5000EED0000][v0].nsp")
+    assert detect_content_type(eight) is ContentType.BASE
+    assert normalize_game_name(eight) == "The Jackbox Party Pack 8"
+    assert set(group_switch_files([eight, nine])) == {
+        "The Jackbox Party Pack 8", "The Jackbox Party Pack 9"}
+
+    passes = Path("Pokemon Sword Expansion Pass [0100ABF008968000][v0].nsp")
+    assert detect_content_type(passes) is ContentType.BASE
+
+
+def test_a_bracketed_marker_still_beats_the_title_id():
+    """`[DLC]` is a statement about the file, not part of the name."""
+    assert detect_content_type(
+        Path("Game [DLC] [0100152000022000][v0].nsp")) is ContentType.DLC
+    assert detect_content_type(
+        Path("Game (update) [0100152000022000][v0].nsp")) is ContentType.UPDATE
+
+
+def test_real_dlc_shares_a_family_with_its_base():
+    """Nintendo assigns DLC as base + 0x1000, so the fourth hex digit from the
+    end moves as well as the last three. Keeping the first thirteen characters
+    was right for an update and wrong for DLC, and real DLC therefore landed in
+    a game folder of its own beside the base."""
+    from aynthor.core.switch import group_switch_files, title_family
+
+    base = Path("Zelda TOTK [01007EF00011E000][v0].nsp")
+    update = Path("Zelda TOTK [01007EF00011E800][v65536].nsp")
+    dlc = Path("Zelda TOTK Master Works [01007EF00011F001][v0].nsp")
+    other = Path("Metroid Dread [010093801237C000][v0].nsp")
+
+    assert title_family(base) == title_family(update) == title_family(dlc)
+    assert title_family(base) != title_family(other)
+    assert len(group_switch_files([base, update, dlc])) == 1

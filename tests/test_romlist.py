@@ -222,3 +222,23 @@ def test_an_index_can_be_shared_across_calls(roms_root):
     without = find_rom_files(roms_root, "psx", "Chrono Cross")
     assert with_index == without
 
+
+
+def test_a_list_saved_from_notepad_is_read_whichever_way(tmp_path: Path):
+    """Notepad offers UTF-8, "UTF-8 with BOM" and "Unicode" (UTF-16). Reading
+    every one of them as plain UTF-8 left the byte order mark in front of the
+    first line, so a table's first entry was dropped and an arrow list's first
+    game carried a U+FEFF into the folder name written to the card. A UTF-16
+    file produced no entries at all."""
+    body = "| Chrono Cross | psx | CHD |\nDracula X -> psx -> CHD\n"
+    expected = [("Chrono Cross", "psx"), ("Dracula X", "psx")]
+
+    for name, data in (
+        ("plain.txt", body.encode("utf-8")),
+        ("bom.txt", b"\xef\xbb\xbf" + body.encode("utf-8")),
+        ("unicode.txt", body.encode("utf-16")),
+    ):
+        path = tmp_path / name
+        path.write_bytes(data)
+        entries = parse_list_file(path)
+        assert [(e.game, e.platform) for e in entries] == expected, name

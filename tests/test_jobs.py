@@ -270,3 +270,47 @@ def test_a_windows_device_name_is_not_used_as_a_folder(reserved):
     from aynthor.core.output import safe_folder_name
 
     assert safe_folder_name(reserved).startswith("_")
+
+
+def test_two_rows_in_one_batch_cannot_claim_the_same_output(tmp_path: Path):
+    """The policy only looked at the disk, and at build time none of the batch
+    has run, so two rows heading for one path both passed. Whichever finished
+    last won and the other game was gone -- including for a user who had
+    chosen "rename" precisely to avoid that."""
+    settings = FormatSettings()
+    settings.on_conflict = "rename"
+    one = tmp_path / "one.iso"
+    two = tmp_path / "two.iso"
+    for path in (one, two):
+        path.write_bytes(b"\0" * 32)
+    output = tmp_path / "Game.chd"
+
+    jobs = build_jobs([row(one, output), (1, row(two, output)[1])], settings)
+    assert len({job.output_path for _row, job in jobs}) == 2
+
+
+def test_overwrite_still_steps_aside_for_another_row_in_the_same_batch(tmp_path):
+    """Overwriting a file that was there before the batch is what the user
+    asked for. Overwriting what another row is about to write is losing a
+    game."""
+    settings = FormatSettings()
+    settings.on_conflict = "overwrite"
+    one = tmp_path / "one.iso"
+    two = tmp_path / "two.iso"
+    for path in (one, two):
+        path.write_bytes(b"\0" * 32)
+    output = tmp_path / "Game.chd"
+
+    jobs = build_jobs([row(one, output), (1, row(two, output)[1])], settings)
+    assert len({job.output_path for _row, job in jobs}) == 2
+
+
+def test_an_unknown_conflict_policy_falls_back_to_skip():
+    """It is read from the registry, and an unknown value used to fall through
+    to the final `return output`, which means overwrite -- the one outcome
+    that destroys a file."""
+    from aynthor.core.jobs import conflict_policy
+
+    assert conflict_policy("rename") == "rename"
+    assert conflict_policy("") == "skip"
+    assert conflict_policy("Overwrite") == "skip"

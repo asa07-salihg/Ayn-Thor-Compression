@@ -36,8 +36,8 @@ import re
 import shutil
 import tempfile
 import zipfile
-from collections.abc import Callable, Iterator
-from contextlib import contextmanager
+from collections.abc import Callable, Iterable, Iterator
+from contextlib import contextmanager, suppress
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
@@ -176,6 +176,40 @@ def rom_members(members: list[Member]) -> list[str]:
     return sorted(chosen)
 
 
+def rom_files(files: Iterable[Path]) -> list[Path]:
+    """The same selection as `rom_members`, for files found by scanning a folder.
+
+    Why
+        Add folder took every extension the app knows, so the standard
+        PlayStation dump — one `.cue` beside `Game (Track 01..03).bin` — came
+        in as four rows. Three of them ran `chdman createcd` on a raw track,
+        and all four wanted to write `Game.chd`: whichever finished last won
+        and the other three were destroyed on the way. `rom_members` has had
+        the rule for archives since the start; a folder needs it too.
+
+        The rule is per directory rather than per stem, because a cue sheet
+        almost never shares its name with its tracks. A folder holding a
+        sheet is a disc dump and the sheet is the row; chdman reads the
+        tracks from it. A folder with no sheet keeps its `.bin` files,
+        because that is also the Mega Drive cartridge extension and
+        `megadrive/Sonic.bin` is a ROM in its own right.
+    """
+    paths = list(files)
+    sheet_dirs = {p.parent for p in paths if p.suffix.lower() in _SHEET_EXTS}
+    sheet_stems = {
+        (p.parent, p.stem.lower()) for p in paths if p.suffix.lower() in _SHEET_EXTS
+    }
+    chosen: list[Path] = []
+    for path in paths:
+        ext = path.suffix.lower()
+        if ext in _NEEDS_SHEET and path.parent in sheet_dirs:
+            continue
+        if ext in _REDUNDANT_WITH_SHEET and (path.parent, path.stem.lower()) in sheet_stems:
+            continue
+        chosen.append(path)
+    return chosen
+
+
 class ArchiveScratch:
     """One extraction of an archive, shared by every member that will run.
 
@@ -305,11 +339,7 @@ def extract_member_to(
     )
     size = meta.size if meta is not None else 0
     destination.parent.mkdir(parents=True, exist_ok=True)
-    free = shutil.disk_usage(destination.parent).free
-    if size and size + _HEADROOM > free:
-        raise UnpackError(
-            f"{Path(member).name} needs {size / 1e9:.1f} GB and only "
-            f"{free / 1e9:.1f} GB is free next to it.")
+    _require_space(destination.parent, size, Path(member).name)
 
     # Stage beside the destination so the final step is a same-volume rename,
     # then delete the empty staging dir. Peak disk use is one copy of the file.
@@ -319,9 +349,11 @@ def extract_member_to(
             _extract_zip_member(archive, wanted, staging, size, on_progress)
         elif archive.suffix.lower() == ".rar":
             _extract_7z_member(
-                archive, wanted, staging, on_progress, tool=_rar_tool())
+                archive, wanted, staging, on_progress,
+                tool=_rar_tool(), listed=listed)
         else:
-            _extract_7z_member(archive, wanted, staging, on_progress)
+            _extract_7z_member(
+                archive, wanted, staging, on_progress, listed=listed)
         found = _resolve_extracted(staging, wanted, listed)
         if found is None or not found.is_file():
             raise UnpackError(
@@ -329,6 +361,13 @@ def extract_member_to(
         if destination.exists():
             destination.unlink()
         os.replace(found, destination)
+        # 7-Zip and the zip reader restore the timestamp the archive recorded,
+        # which can be years old. The runner proves an output belongs to this
+        # run by its mtime before it will delete a source, so an archived
+        # timestamp made delete-source silently never fire on a Move out of an
+        # archive. This file was written now, and should say so.
+        with suppress(OSError):
+            os.utime(destination, None)
         if on_progress:
             on_progress(100)
     finally:
@@ -338,12 +377,24 @@ def extract_member_to(
 _TITLE_ID_IN_NAME = re.compile(r"\[([0-9A-Fa-f]{16})\]")
 
 
+def _require_space(folder: Path, needed: int, what: str) -> None:
+    """Refuse before writing, rather than filling the card and finding out."""
+    if needed <= 0:
+        return
+    free = shutil.disk_usage(folder).free
+    if needed + _HEADROOM > free:
+        raise UnpackError(
+            f"{what} needs {needed / 1e9:.1f} GB and only "
+            f"{free / 1e9:.1f} GB is free next to it.")
+
+
 def _safe_7z_mask(member: str) -> str | None:
     """A 7-Zip include mask that will not be eaten by `[]` wildcards.
 
-    Switch dumps are named `Game [0100BAC01E57E800][v0].nsp`. Passing that
-    path to `7z x` matches zero files because `[0100…]` is a character class.
-    A unique title-id fragment with `*` is safe and still selects one file.
+    Switch dumps are named `Game [0100BAC01E57E800][v0].nsp`, and some 7-Zip
+    builds read `[0100…]` in that name as a character class and match zero
+    files. A unique title-id fragment with `*` is safe and still selects one
+    file, because a title id appears once in an archive.
     """
     name = Path(member.replace("\\", "/")).name
     match = _TITLE_ID_IN_NAME.search(name)
@@ -354,21 +405,49 @@ def _safe_7z_mask(member: str) -> str | None:
     return None
 
 
+def _member_masks(member: str) -> list[str]:
+    """What to ask 7-Zip for, most precise first.
+
+    The full path inside the archive comes first, because that is the one
+    answer that cannot select the wrong file: an archive laid out as
+    `Disc 1/Game.iso` and `Disc 2/Game.iso` has two members with the same
+    name. The title-id fragment is the fallback for the builds that cannot
+    read a bracketed name.
+    """
+    normalised = member.replace("\\", "/")
+    masks = [normalised]
+    fallback = _safe_7z_mask(normalised)
+    if fallback and fallback != normalised:
+        masks.append(fallback)
+    return masks
+
+
 def _extract_7z_member(
     archive: Path,
     member: str,
     into: Path,
     on_progress: Callable[[int], None] | None,
     tool: Path | None = None,
+    listed: list[Member] | None = None,
 ) -> None:
-    """Extract one member via 7-Zip without the `[]` wildcard trap."""
-    mask = _safe_7z_mask(member)
-    if mask:
+    """Extract one member via 7-Zip, falling back to the whole archive.
+
+    Masks are passed through `-i!`, 7-Zip's include switch, rather than as a
+    bare positional argument: a member called `-o.iso` on a command line is a
+    switch and not a name, and 7-Zip answers `Multiple instances for switch`
+    and exit 7. That is the same hazard `core.jobs` makes every converter
+    path absolute to avoid, reintroduced by putting a bare relative name back
+    on the argv.
+    """
+    for mask in _member_masks(member):
         _extract_7z(
             archive, into, on_progress, tool=tool, member=mask, recursive=True)
         if any(path.is_file() for path in into.rglob("*")):
             return
-    # Fall back: unpack the whole archive into staging, then resolve.
+    # Fall back: unpack the whole archive into staging, then resolve. The
+    # caller only checked there was room for the one member, so a 40 GB
+    # multi-dump set would have filled the card before anything said so.
+    _require_space(into, sum(m.size for m in listed or []), archive.name)
     _extract_7z(archive, into, on_progress, tool=tool)
 
 
@@ -380,12 +459,25 @@ def _extract_zip_member(
     on_progress: Callable[[int], None] | None,
 ) -> None:
     with zipfile.ZipFile(archive) as opened:
-        info = None
-        for entry in opened.infolist():
-            name = entry.filename.replace("\\", "/")
-            if name == member or Path(name).name == Path(member).name:
-                info = entry
-                break
+        entries = opened.infolist()
+        info = next(
+            (e for e in entries if e.filename.replace("\\", "/") == member), None)
+        if info is None:
+            # Only when it picks out one file. Matching on the basename and
+            # taking the first hit returned `Disc 1/Game.iso` for a request
+            # for `Disc 2/Game.iso`, so a two-disc zip wrote disc one twice
+            # and reported both rows as done.
+            wanted = Path(member).name
+            by_name = [
+                e for e in entries
+                if Path(e.filename.replace("\\", "/")).name == wanted
+            ]
+            if len(by_name) == 1:
+                info = by_name[0]
+            elif by_name:
+                raise UnpackError(
+                    f"{archive.name} holds {len(by_name)} files called "
+                    f"{wanted}; cannot tell which one {member} is.")
         if info is None:
             raise UnpackError(f"{member} is not in {archive.name}.")
         opened.extract(info, into)
@@ -533,7 +625,9 @@ def _extract_7z(
     if recursive:
         args.append("-r")
     if member:
-        args.append(member)
+        # `-i!` rather than a positional: a name that begins with a dash is a
+        # switch to 7-Zip, and the whole command is refused.
+        args.append(f"-i!{member}")
     # Exit code 1 is "warning" (e.g. locked file skipped); 2+ is fatal.
     result = run_tool(seven, args, on_output=emit)
     if result.returncode > 1:

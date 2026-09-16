@@ -25,7 +25,12 @@ from pathlib import Path, PurePosixPath
 
 from aynthor.core.formats import natural_mode, suggest_output_path
 from aynthor.core.models import CompressionFormat, ConversionMode, QueueItem
-from aynthor.core.output import output_for, safe_folder_name, strip_disc_tag
+from aynthor.core.output import (
+    member_name,
+    output_for,
+    safe_folder_name,
+    strip_disc_tag,
+)
 from aynthor.core.presets import PresetTable, detect_platform_format
 from aynthor.core.settings import FormatSettings
 from aynthor.core.switch import (
@@ -81,7 +86,11 @@ def queue_items_for(
                 return _grouped_archive_items(path, items, settings), None
             if roms:
                 return [], last_reason or f"{path.name}: no convertible ROM inside"
-        if path.suffix.lower() == ".rar":
+        if listed is None and path.suffix.lower() == ".rar":
+            # Only when the RAR could not be read at all. This used to fire
+            # whenever nothing convertible was found inside, so a RAR of cover
+            # art opened perfectly well and then told the user to install a
+            # tool that was already working.
             return [], (
                 f"{path.name}: cannot read this RAR. 7za cannot open RAR; "
                 "install 7-Zip (7z.exe) from 7-zip.org."
@@ -96,8 +105,15 @@ def _grouped_archive_items(
     folder named after the zip, not four unrelated rows.
 
     The archive's stem (disc tags stripped) is the game name. A Switch dump
-    that already set `game_group` from the filename is left alone.
+    that already set `game_group` from the filename is left alone, and so is
+    an archive that turns out to hold several different games: `SNES
+    Favourites.zip` with three carts in it is three games, and naming all
+    three after the zip sent all three to
+    `snes/SNES Favourites.7z/SNES Favourites.7z`, where the last one written
+    was the only one left.
     """
+    if len({_title_key(item) for item in items if not item.game_group}) > 1:
+        return items
     group = safe_folder_name(strip_disc_tag(archive.name)) or safe_folder_name(archive.stem)
     if not group:
         return items
@@ -116,6 +132,13 @@ def _grouped_archive_items(
                 item.platform, item.member)
         grouped.append(item)
     return grouped
+
+
+def _title_key(item: QueueItem) -> str:
+    """One archive member reduced to the game it is, for telling a four-disc
+    set apart from a compilation of four different games."""
+    name = member_name(item.member) if item.member else item.path.name
+    return (strip_disc_tag(name) or Path(name).stem).casefold()
 
 
 def _as_list(

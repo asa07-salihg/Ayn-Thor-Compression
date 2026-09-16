@@ -71,20 +71,57 @@ def job_options(settings: FormatSettings, item: QueueItem) -> dict:
     return options
 
 
-def resolve_output_path(output: Path, on_conflict: str) -> Path | None:
-    """Apply the conflict policy. None means "do not run this job"."""
-    if not output.exists():
+# What the conflict setting is allowed to be. Anything else falls back to the
+# safe one: the policy is read from the registry, and an unknown value used to
+# reach the final `return output` and silently mean overwrite -- the one
+# outcome that destroys a file.
+CONFLICT_POLICIES = ("skip", "rename", "overwrite")
+
+
+def conflict_policy(value: str) -> str:
+    """The stored setting, or `skip` when it is not one this app wrote."""
+    return value if value in CONFLICT_POLICIES else "skip"
+
+
+def resolve_output_path(
+    output: Path, on_conflict: str, taken: set[Path] | None = None,
+) -> Path | None:
+    """Apply the conflict policy. None means "do not run this job".
+
+    `taken` is the set of outputs earlier rows in this same batch have already
+    claimed. Without it the policy only ever looked at the disk, and at build
+    time none of the batch has run yet, so two rows heading for one path both
+    passed: a zip laid out as `Disc 1/Game.iso` and `Disc 2/Game.iso` produced
+    two jobs writing `Game.chd`, both reported success, and one game was left
+    on the card. A user who picked "rename" picked it for exactly that.
+    """
+    claimed = taken if taken is not None else set()
+
+    def busy(candidate: Path) -> bool:
+        return candidate.exists() or candidate in claimed
+
+    if not busy(output):
         return output
     if on_conflict == "skip":
         return None
     if on_conflict == "rename":
         candidate = output
         counter = 1
-        while candidate.exists():
+        while busy(candidate):
             candidate = output.with_name(f"{output.stem}_{counter}{output.suffix}")
             counter += 1
         return candidate
-    return output  # overwrite
+    # Overwrite. Overwriting a file that was there before this batch is what
+    # the user asked for; overwriting what another row in the same batch is
+    # about to write is losing a game, so that one is stepped aside anyway.
+    if output not in claimed:
+        return output
+    candidate = output
+    counter = 1
+    while busy(candidate):
+        candidate = output.with_name(f"{output.stem}_{counter}{output.suffix}")
+        counter += 1
+    return candidate
 
 
 def build_jobs(
@@ -93,14 +130,16 @@ def build_jobs(
 ) -> list[tuple[int, ConversionJob]]:
     """Rows in, jobs out. The int is the table row, so progress can find it again."""
     jobs: list[tuple[int, ConversionJob]] = []
+    claimed: set[Path] = set()
 
     for row, item in queue:
         if item.format is None:
             continue
 
-        output = resolve_output_path(item.output, settings.on_conflict)
+        output = resolve_output_path(item.output, settings.on_conflict, claimed)
         if output is None:
             continue
+        claimed.add(output)
 
         input_size = item.source_bytes if item.source_bytes > 0 else 0
         if input_size <= 0:

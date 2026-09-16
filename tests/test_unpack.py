@@ -240,3 +240,70 @@ def test_extract_member_to_handles_brackets_in_switch_names(tmp_path: Path):
     dest = tmp_path / "game" / "Update.nsp"
     extract_member_to(archive, member.replace("\\", "/"), dest)
     assert dest.read_bytes() == b"update-bytes"
+
+
+def test_a_folder_scan_drops_track_files_beside_their_cue_sheet():
+    """`rom_members` has had this rule for archives since the start. Add folder
+    did not, so the standard PlayStation dump -- one `.cue` beside
+    `Game (Track 01..03).bin` -- came in as four rows, three of them running
+    `chdman createcd` on a raw track, and all four writing `Game.chd`."""
+    from aynthor.core.unpack import rom_files
+
+    psx = Path("/card/ROMs/psx")
+    found = rom_files([
+        psx / "FF7 (Disc 1).cue",
+        psx / "FF7 (Disc 1) (Track 01).bin",
+        psx / "FF7 (Disc 1) (Track 02).bin",
+        psx / "FF7 (Disc 1) (Track 03).bin",
+    ])
+    assert [path.name for path in found] == ["FF7 (Disc 1).cue"]
+
+
+def test_a_folder_with_no_cue_sheet_keeps_its_bin_files():
+    """`.bin` is also the Mega Drive cartridge extension, and a cartridge is a
+    ROM in its own right."""
+    from aynthor.core.unpack import rom_files
+
+    md = Path("/card/ROMs/megadrive")
+    found = rom_files([md / "Sonic.bin", md / "Streets of Rage.bin"])
+    assert len(found) == 2
+
+
+def test_an_iso_beside_its_own_cue_sheet_is_still_dropped():
+    from aynthor.core.unpack import rom_files
+
+    psx = Path("/card/ROMs/psx")
+    found = rom_files([psx / "Game.cue", psx / "Game.iso", psx / "Other.iso"])
+    assert sorted(path.name for path in found) == ["Game.cue", "Other.iso"]
+
+
+def test_a_zip_with_two_members_of_one_name_extracts_the_right_one(tmp_path: Path):
+    """Members were matched on the basename, first hit wins, so asking for
+    `Disc 2/Game.iso` returned disc one. Both rows wrote disc one and the app
+    reported two successes."""
+    from aynthor.core.unpack import extract_member_to
+
+    archive = _zip_with(tmp_path / "ff7.zip", {
+        "Disc 1/Game.iso": b"DISC-ONE",
+        "Disc 2/Game.iso": b"DISC-TWO",
+    })
+    dest = tmp_path / "out" / "two.iso"
+    extract_member_to(archive, "Disc 2/Game.iso", dest)
+    assert dest.read_bytes() == b"DISC-TWO"
+
+
+def test_a_member_extracted_from_an_archive_is_stamped_with_now(tmp_path: Path):
+    """The zip reader and 7-Zip both restore the timestamp the archive
+    recorded, which can be years old. The runner proves an output belongs to
+    this run by its mtime before it will delete a source, so a Move out of an
+    archive silently never deleted the archive and said the output "was
+    already there"."""
+    import time
+
+    from aynthor.core.unpack import extract_member_to
+
+    archive = _zip_with(tmp_path / "old.zip", {"Game.iso": b"bytes"})
+    dest = tmp_path / "out" / "Game.iso"
+    started = time.time()
+    extract_member_to(archive, "Game.iso", dest)
+    assert dest.stat().st_mtime >= started - 2

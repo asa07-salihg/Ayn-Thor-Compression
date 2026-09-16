@@ -35,7 +35,7 @@ from __future__ import annotations
 
 import re
 from functools import lru_cache
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from aynthor.core import esde
 from aynthor.core.esde import ESDE_PLATFORM_FOLDERS
@@ -53,9 +53,13 @@ _DISC_TAG = re.compile(
 # in the catalogue and has to be listed here.
 _GAME_FOLDER_EXTRAS = frozenset({".m3u"})
 
+# `Disc 2/`, `CD 1/`: a multi-disc dump where the disc is the folder and every
+# disc image inside has the same file name.
+_DISC_FOLDER = re.compile(r"^\s*(?:disc|disk|cd)\s*([0-9]+|[a-z])\s*$", re.IGNORECASE)
+
 # Path separators, the drive colon, and the rest of what Windows refuses in a
 # file name. Any of them means the text was never a single folder name.
-_FORBIDDEN_IN_NAME = frozenset('/\\:*?"<>|\0')
+_FORBIDDEN_IN_NAME = frozenset('/\\:*?"<>|') | {chr(c) for c in range(32)}
 
 # CON, PRN and friends are devices, not files: opening one hangs or writes to
 # hardware. Windows refuses them with any extension, so the stem is checked.
@@ -91,7 +95,7 @@ def output_for(
     """
     if fmt is None:
         return path
-    source = path.parent / member.rsplit("/", 1)[-1] if member else path
+    source = path.parent / member_name(member) if member else path
     suggested = suggest_output_path(source, fmt, mode, options)
 
     base = _destination(settings, platform, path)
@@ -114,6 +118,28 @@ def output_for(
     if base:
         return base / suggested.name
     return suggested
+
+
+def member_name(member: str) -> str:
+    """The file name an archive member's output is built from.
+
+    Normally the member's own name. A multi-disc dump is often laid out as
+    `Disc 1/Game.iso`, `Disc 2/Game.iso`, though: the disc is the folder and
+    both files are called the same thing. Naming both outputs after the file
+    alone gave one game two rows heading for one path, so the folder's disc
+    number is folded into the name and the discs stay apart.
+    """
+    parts = PurePosixPath(member.replace("\\", "/")).parts
+    if not parts:
+        return member
+    name = parts[-1]
+    if len(parts) < 2 or _DISC_TAG.search(Path(name).stem):
+        return name
+    found = _DISC_FOLDER.match(parts[-2])
+    if not found:
+        return name
+    leaf = Path(name)
+    return f"{leaf.stem} (Disc {found.group(1)}){leaf.suffix}"
 
 
 def aligned_folder(folder: str, output_name: str) -> str:
@@ -145,13 +171,35 @@ def file_name_in_folder(
     return folder
 
 
+def _is_first_disc(disc: str) -> bool:
+    """Whether this disc token means "the one the folder is named after".
+
+    `01` is disc one. Comparing the token as text made it disc *something
+    else*, so a redump-style `Final Fantasy VII (Disc 01/02/03)` set produced
+    a folder with no file matching its own name — which ES-DE hands to the
+    emulator as a directory, and nothing launches.
+    """
+    if disc in ("", "a"):
+        return True
+    return disc.isdigit() and int(disc) == 1
+
+
 def _keeps_own_name(output_name: str, options: dict | None) -> bool:
-    content = str((options or {}).get("content_type", "")).lower()
+    options = options or {}
+    if options.get("keep_name"):
+        # Joining a game folder that already has its primary file. Without
+        # this the new file was given the folder's own name, which is the
+        # path of the ROM already sitting there: with the conflict policy on
+        # overwrite the extra was copied straight over the base game, and
+        # with the default Skip the row was dropped and Start said there was
+        # nothing to do.
+        return True
+    content = str(options.get("content_type", "")).lower()
     if content in ("update", "dlc"):
         return True
     tag = _DISC_TAG.search(Path(output_name).stem)
     disc = tag.group(1).lower() if tag else ""
-    return disc not in ("", "1", "a")
+    return not _is_first_disc(disc)
 
 
 def _wants_game_folder(fmt: CompressionFormat, mode: ConversionMode) -> bool:
@@ -161,8 +209,17 @@ def _wants_game_folder(fmt: CompressionFormat, mode: ConversionMode) -> bool:
 
 
 def strip_disc_tag(name: str) -> str:
-    """The title with `(Disc 2)` and friends removed. Empty when nothing is left."""
-    return _DISC_TAG.sub("", Path(name).stem).strip()
+    """The title with `(Disc 2)` and friends removed. Empty when nothing is left.
+
+    Only a recognised ROM extension is dropped. `Path.stem` cuts at the last
+    dot, which is right for `Game.chd` and wrong for a title: "New Super Mario
+    Bros. U Deluxe" came back as "New Super Mario Bros", so an update never
+    matched the game folder of that name already on the card and was written
+    into a second folder of its own.
+    """
+    text = Path(name)
+    stem = text.stem if text.suffix.lower() in _game_folder_suffixes() else name
+    return _DISC_TAG.sub("", stem).strip()
 
 
 def game_folder_layout(output_name: str, options: dict | None = None) -> tuple[str, str]:
@@ -192,7 +249,7 @@ def game_folder_layout(output_name: str, options: dict | None = None) -> tuple[s
     content = str(options.get("content_type", "")).lower()
     if content in ("update", "dlc"):
         return folder, output_name
-    if disc in ("", "1", "a"):
+    if _is_first_disc(disc):
         return folder, folder
     return folder, output_name
 
@@ -245,23 +302,42 @@ def safe_folder_name(name: str) -> str:
         with them, and a name that is only dots is refused outright.
     """
     cleaned = "".join("_" if ch in _FORBIDDEN_IN_NAME else ch for ch in name).strip()
-    # A trailing dot or space is legal to create and impossible to open on
-    # Windows, and NTFS streams hide behind a colon, which is already replaced.
-    cleaned = cleaned.rstrip(". ")
+    # Length first: trimming and then cutting can put a trailing space or dot
+    # back on the end, and those are legal to create and impossible to open
+    # on Windows. NTFS streams hide behind a colon, which is already replaced.
+    cleaned = cleaned[:_MAX_NAME].rstrip(". ")
     if not cleaned or cleaned in {".", ".."} or set(cleaned) <= {"."}:
         return ""
     if cleaned.upper().split(".")[0] in _RESERVED_ON_WINDOWS:
         return f"_{cleaned}"
-    return cleaned[:_MAX_NAME]
+    return cleaned
 
 
-@lru_cache(maxsize=8)
+_ROMS_ROOT: dict[str, Path] = {}
+
+
 def _roms_root(configured: str) -> Path:
     """Cached: `resolve_roms_root` stats the disk to work out whether it was
     given the ROMs folder or the folder above it, and this is asked once per
     row. A two thousand file card did that two thousand times, and the answer
     cannot change while the queue is being filled."""
-    return esde.resolve_roms_root(Path(configured))
+    cached = _ROMS_ROOT.get(configured)
+    if cached is None:
+        cached = esde.resolve_roms_root(Path(configured))
+        _ROMS_ROOT[configured] = cached
+    return cached
+
+
+def forget_roms_root() -> None:
+    """Drop the cache above, because between two fills the answer can change.
+
+    It is only true for the length of one fill. Someone who points the app at
+    a blank card and then copies an ES-DE tree onto it has changed the
+    answer, and with the cache never cleared every output for the rest of the
+    session went to `E:/psx` rather than `E:/ROMs/psx`. Called whenever
+    settings are applied and before each batch of files is added.
+    """
+    _ROMS_ROOT.clear()
 
 
 def platform_destination(

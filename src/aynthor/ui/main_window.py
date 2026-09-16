@@ -56,6 +56,7 @@ from aynthor.core.settings import FormatSettings
 from aynthor.core.switch import ContentType, content_warnings, summarize_group
 from aynthor.core.system import find_prod_keys
 from aynthor.core.tools.manager import ToolsManager
+from aynthor.core.unpack import rom_files
 from aynthor.ui import state, theme
 from aynthor.ui.about_dialog import AboutDialog
 from aynthor.ui.drop_zone import DropZone
@@ -417,8 +418,9 @@ class MainWindow(QMainWindow):
             if path.is_dir():
                 folders_added += self.queue.add_folder_tree(
                     path, discover_folders(path), self.settings)
-                found = sorted(p for p in path.rglob("*")
-                               if p.is_file() and p.suffix.lower() in extensions)
+                found = rom_files(sorted(
+                    p for p in path.rglob("*")
+                    if p.is_file() and p.suffix.lower() in extensions))
                 for found_file in found:
                     files.append(found_file)
                     labels[found_file] = folder_label(path, found_file)

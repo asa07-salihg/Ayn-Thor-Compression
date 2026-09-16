@@ -104,7 +104,16 @@ class JobRunner(QThread):
 
     def _execute(self, row: int, job: ConversionJob) -> tuple[bool, str]:
         """Unpack if needed, create the output folder, convert or just place."""
-        job.output_path.parent.mkdir(parents=True, exist_ok=True)
+        parent = job.output_path.parent
+        if not parent.is_file():
+            # `exist_ok` only forgives a directory that is already there, so
+            # this raised for the one case game folders are built around:
+            # folding a loose `Game.7z` into `Game.7z/Game.7z` asks for a
+            # folder whose path is the source file. `place_file` moves the
+            # file aside and creates the folder itself, so the mkdir here has
+            # to stand out of its way -- otherwise every already-correct ROM
+            # on a card failed the moment game folders were turned on.
+            parent.mkdir(parents=True, exist_ok=True)
         original = job.input_path
         converter = get_converter(job.format)
         try:

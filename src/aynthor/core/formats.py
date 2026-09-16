@@ -72,9 +72,9 @@ FORMAT_CATALOG: tuple[FormatInfo, ...] = (
         CompressionFormat.CSO,
         "CSO",
         "PSP (alternative to CHD)",
-        (".iso", ".cso", ".zso"),
+        (".iso", ".cso", ".zso", ".dax"),
         "maxcso",
-        reverse_on=(".cso", ".zso"),
+        reverse_on=(".cso", ".zso", ".dax"),
         reason="Smaller than CHD on PSP titles, and PPSSPP reads it natively. "
                "Pick CHD instead if you want one format across all disc systems.",
         notes="ZSO trades a little size for much faster decompression on weak hardware.",
@@ -118,8 +118,10 @@ FORMAT_CATALOG: tuple[FormatInfo, ...] = (
     FormatInfo(
         CompressionFormat.SEVEN_ZIP,
         "7z / ZIP",
-        "SNES, GBA, GB, GBC, Mega Drive, arcade",
-        (".sfc", ".smc", ".gba", ".gb", ".gbc", ".md", ".gen", ".smd", ".7z", ".zip"),
+        "SNES, GBA, GB, GBC, Mega Drive, Master System, Game Gear, "
+        "PC Engine, 32X, SG-1000, arcade",
+        (".sfc", ".smc", ".gba", ".gb", ".gbc", ".md", ".gen", ".smd",
+         ".sms", ".gg", ".pce", ".32x", ".sg", ".7z", ".zip"),
         "7-Zip",
         reason="Cartridge ROMs are plain data and compress well. RetroArch opens "
                "7z transparently.",

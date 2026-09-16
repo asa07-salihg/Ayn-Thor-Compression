@@ -109,10 +109,17 @@ def is_platform_folder(path: Path) -> bool:
 def platform_from_path(path: Path) -> str:
     """The ES-DE platform a file sits in, from a folder name in its path.
 
+    Read from the file outwards, because the folder nearest the file is the
+    one that was chosen for it. Left to right, an ordinary directory on the
+    way down could outrank the real platform folder:
+    `D:/Games/Steam/ROMs/ps2/Game.iso` is a PS2 disc that happens to live
+    under a folder called Steam, and `C:/Users/PC/...` belongs to somebody
+    whose account is named PC, not to a platform called `windows`.
+
     Empty when nothing in the path is a known platform folder: a download
     sitting in `Downloads` has no platform of its own.
     """
-    for part in path.parts:
+    for part in reversed(path.parts):
         mapped = FOLDER_TO_PLATFORM.get(part.lower())
         if mapped:
             return mapped
@@ -150,9 +157,20 @@ def search_dirs(roms_root: Path, platform: str) -> list[Path]:
     seen: set[Path] = set()
     for name in folders:
         for candidate in (root / name, roms_root / name):
-            if candidate.is_dir() and candidate not in seen:
-                seen.add(candidate)
-                dirs.append(candidate)
+            if not candidate.is_dir():
+                continue
+            # Keyed on the resolved path: `root` has been through `resolve`
+            # and `roms_root` has not, so a relative or substituted root gave
+            # two different spellings of one directory, and every title in it
+            # was listed -- and queued -- twice.
+            try:
+                key = candidate.resolve()
+            except OSError:
+                key = candidate
+            if key in seen:
+                continue
+            seen.add(key)
+            dirs.append(candidate)
     return dirs
 
 

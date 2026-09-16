@@ -41,8 +41,8 @@ from collections.abc import Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from aynthor.core.esde import FOLDER_TO_PLATFORM, platform_from_path
-from aynthor.core.formats import detect_format
+from aynthor.core.esde import platform_from_path
+from aynthor.core.formats import FORMAT_CATALOG, detect_format
 from aynthor.core.models import CompressionFormat
 
 
@@ -221,7 +221,7 @@ EXT_TO_PLATFORM: dict[str, str] = {
     ".cue": "psx", ".bin": "psx", ".img": "psx", ".chd": "psx",
     ".iso": "ps2",  # refined below from the folder it sits in
     ".gdi": "dreamcast",
-    ".cso": "psp", ".zso": "psp",
+    ".cso": "psp", ".zso": "psp", ".dax": "psp",
     ".wbfs": "wii", ".rvz": "gc", ".wia": "gc", ".gcz": "gc",
     ".cci": "n3ds", ".cia": "n3ds", ".3ds": "n3ds", ".cxi": "n3ds", ".3dsx": "n3ds",
     ".zcci": "n3ds", ".zcia": "n3ds", ".zcxi": "n3ds", ".z3ds": "n3ds", ".z3dsx": "n3ds",
@@ -231,6 +231,8 @@ EXT_TO_PLATFORM: dict[str, str] = {
     ".gba": "gba",
     ".md": "megadrive", ".gen": "megadrive", ".smd": "megadrive",
     ".gb": "gb", ".gbc": "gbc",
+    ".sms": "mastersystem", ".gg": "gamegear", ".pce": "pcengine",
+    ".32x": "sega32x", ".sg": "sg-1000",
     ".zip": "fbneo",
     ".wud": "wiiu", ".wux": "wiiu", ".wua": "wiiu",
 }
@@ -243,9 +245,18 @@ SKIP_PLATFORMS = {"windows", "steam"}
 # Which folder an ambiguous .iso is treated as when nothing else says.
 _ISO_FALLBACK = "ps2"
 
-# A zip is an arcade romset or a zipped cart; a 7z is a cart archive or a
-# wrapped disc. The folder they sit in is the only way to tell.
-_FOLDER_WINS = {".zip", ".7z"}
+# Extensions that name a container rather than a system. A `.cue`/`.bin`
+# pair is how a disc is dumped for PlayStation, Saturn, Sega CD, PC Engine
+# CD, Neo Geo CD, 3DO and PC-FX alike; `.chd` is the compressed form of any
+# of them; a `.zip` is an arcade romset or a zipped cartridge; a `.7z` is a
+# cartridge archive or a wrapped disc. For these the folder the file sits in
+# is the only thing that says which system it is, and the entry in
+# EXT_TO_PLATFORM is only the guess for a file that is not in one.
+#
+# `.bin` matters most here: it is the standard Mega Drive cartridge
+# extension as well as a CD track, so without this a cartridge in
+# `ROMs/megadrive` was queued as a disc and handed to `chdman createcd`.
+_FOLDER_WINS = {".iso", ".cue", ".bin", ".img", ".chd", ".gdi", ".zip", ".7z"}
 
 
 @dataclass(frozen=True)
@@ -257,15 +268,31 @@ class DetectResult:
     skip_reason: str = ""
 
 
-def _platform_for_iso(path: Path) -> str:
-    parts = [part.lower() for part in path.parts]
-    for part in parts:
-        if part in FOLDER_TO_PLATFORM:
-            return FOLDER_TO_PLATFORM[part]
-    for candidate in ("wii", "gc", "psp", "ps2"):
-        if candidate in parts:
-            return candidate
-    return _ISO_FALLBACK
+def _format_that_reverses(extension: str) -> CompressionFormat | None:
+    """The format that treats this extension as its own finished output."""
+    for info in FORMAT_CATALOG:
+        if extension in info.reverse_on:
+            return info.format
+    return None
+
+
+def _platform_for_container(path: Path, extension: str) -> str:
+    """The platform of a file whose extension names a container, not a system.
+
+    The ES-DE folder wins. Failing that an `.iso` gets the old word search,
+    because `Wii ISOs/Game.iso` is a common enough layout to be worth
+    reading; everything else falls back to the extension's own guess.
+    """
+    folder = platform_from_path(path)
+    if folder:
+        return folder
+    if extension == ".iso":
+        parts = [part.lower() for part in path.parts]
+        for candidate in ("wii", "gc", "psp", "ps2"):
+            if candidate in parts:
+                return candidate
+        return _ISO_FALLBACK
+    return EXT_TO_PLATFORM.get(extension, "")
 
 
 def detect_platform_format(path: Path, presets: PresetTable | None = None) -> DetectResult:
@@ -277,14 +304,24 @@ def detect_platform_format(path: Path, presets: PresetTable | None = None) -> De
             None, "n64", {}, skip=True,
             skip_reason="N64 is left uncompressed; .z64 is the most compatible form")
 
-    if extension == ".iso":
-        platform = _platform_for_iso(path)
-    elif extension in _FOLDER_WINS:
-        platform = platform_from_path(path) or EXT_TO_PLATFORM.get(extension)
+    if extension in _FOLDER_WINS:
+        platform = _platform_for_container(path, extension)
     else:
-        platform = EXT_TO_PLATFORM.get(extension)
+        platform = EXT_TO_PLATFORM.get(extension, "")
 
     preset = table.get(platform) if platform else None
+
+    already = _format_that_reverses(extension)
+    if already is not None and (preset is None or preset.format is not already):
+        # The file is already somebody's compressed container, and it is not
+        # this platform's. The PSP preset is CHD, so a `.cso` was queued as a
+        # compress and handed to `chdman createdvd`, which wraps the
+        # already-compressed bytes in a raw DVD image instead of converting
+        # anything. A file in a finished container is a request to get the
+        # original back, whatever the platform would have picked for a fresh
+        # dump; `natural_mode` then reads it as a decompress.
+        return DetectResult(already, platform, {})
+
     if preset is not None:
         # A copy: the row that receives these will edit its own options.
         return DetectResult(preset.format, platform, copy.deepcopy(preset.options))

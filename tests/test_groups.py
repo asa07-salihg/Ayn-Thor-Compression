@@ -178,3 +178,54 @@ def test_rename_game_folder_renames_the_primary_rom_too(tmp_path: Path):
     assert (renamed / "New Title.nsp").read_bytes() == b"base"
     assert (renamed / "Old Title [DLC].nsp").is_file()
     assert not (renamed / "Old Title.nsp").exists()
+
+
+def test_renaming_a_game_folder_is_all_or_nothing(tmp_path: Path):
+    """The folder was renamed first and the primary ROM second, so a folder
+    holding both the game and an extra that happened to carry the new name
+    ended up renamed on disk and then aborted: the extra as its primary and
+    the real game beside it under the old name. Unlaunchable, which is exactly
+    what the primary rename exists to prevent."""
+    import pytest
+
+    from aynthor.core.groups import rename_game_folder
+
+    folder = tmp_path / "Old Title.nsp"
+    folder.mkdir()
+    (folder / "Old Title.nsp").write_bytes(b"base")
+    (folder / "New Title.nsp").write_bytes(b"dlc")
+
+    with pytest.raises(FileExistsError):
+        rename_game_folder(folder, "New Title")
+
+    assert folder.is_dir()
+    assert not (tmp_path / "New Title.nsp").exists()
+    assert (folder / "Old Title.nsp").read_bytes() == b"base"
+
+
+def test_a_skipped_folder_takes_its_whole_subtree_with_it(tmp_path: Path):
+    """The skip test was applied to each path on its own while `rglob` walked
+    the whole tree, so the children of a skipped folder came back even though
+    the folder did not. Adding a card root queued
+    `System Volume Information/WPSettings` and `.git/objects` as drop targets
+    with no parent to attach to."""
+    root = tmp_path / "ROMs"
+    (root / "psx").mkdir(parents=True)
+    (root / "System Volume Information" / "WPSettings").mkdir(parents=True)
+    (root / ".git" / "objects").mkdir(parents=True)
+    (root / "__pycache__" / "sub").mkdir(parents=True)
+
+    names = {path.name for path in discover_folders(root)}
+    assert "psx" in names
+    assert names.isdisjoint({"WPSettings", "objects", "sub"})
+
+
+def test_a_title_with_a_full_stop_still_finds_its_folder(tmp_path: Path):
+    """`strip_disc_tag` cut the title at the last dot, so "New Super Mario
+    Bros. U Deluxe" was reduced to "New Super Mario Bros" and the update was
+    written into a second folder of its own."""
+    folder = tmp_path / "New Super Mario Bros. U Deluxe.nsp"
+    folder.mkdir()
+    match = best_disk_game_folder(
+        "New Super Mario Bros. U Deluxe", [folder])
+    assert match == folder

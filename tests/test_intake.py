@@ -179,3 +179,52 @@ def test_four_discs_in_one_zip_share_the_game_name(tmp_path: Path):
     names = {row.output.name for row in items}
     assert "Final Fantasy VIII.chd" in names
     assert "FF8 (Disc 2).chd" in names
+
+
+def test_an_archive_of_several_games_is_not_one_game(tmp_path: Path):
+    """Every member was named after the archive, so a compilation zip sent
+    three cartridges to one path: `SNES Favourites.7z/SNES Favourites.7z`.
+    Two of the three games were destroyed on the way."""
+    snes = tmp_path / "ROMs" / "snes"
+    archive = _zip(snes / "SNES Favourites.zip", {
+        "Super Mario World.sfc": b"a" * 64,
+        "Chrono Trigger.sfc": b"b" * 64,
+        "Secret of Mana.sfc": b"c" * 64,
+    })
+    settings = FormatSettings()
+    settings.game_folders = True
+
+    items, _ = queue_items_for(archive, settings)
+    assert len({item.output for item in items}) == 3
+    assert not any(item.game_group == "SNES Favourites" for item in items)
+
+
+def test_an_archive_of_one_game_is_still_one_folder(tmp_path: Path):
+    """The grouping rule that exists for a four-disc set still holds."""
+    ps2 = tmp_path / "ROMs" / "ps2"
+    archive = _zip(ps2 / "Final Fantasy VII.zip", {
+        "Final Fantasy VII (Disc 1).cue": b"a" * 64,
+        "Final Fantasy VII (Disc 2).cue": b"b" * 64,
+    })
+    settings = FormatSettings()
+    settings.game_folders = True
+
+    items, _ = queue_items_for(archive, settings)
+    assert {item.output.parent.name for item in items} == {"Final Fantasy VII.chd"}
+    assert len({item.output for item in items}) == 2
+
+
+def test_a_readable_rar_with_nothing_inside_does_not_blame_the_tool(
+    tmp_path: Path, monkeypatch,
+):
+    """The "install 7-Zip" message fired whenever nothing convertible was
+    found, so a RAR of cover art opened perfectly well and then told the user
+    to install a tool that was already working."""
+    from aynthor.core import intake
+
+    archive = tmp_path / "Extras.rar"
+    archive.write_bytes(b"not really a rar")
+    monkeypatch.setattr(intake, "list_members", lambda _path: [])
+
+    _items, reason = queue_items_for(archive, FormatSettings())
+    assert reason and "install 7-Zip" not in reason

@@ -28,6 +28,7 @@ import json
 
 from PySide6.QtCore import QByteArray, QSettings
 
+from aynthor.core.jobs import conflict_policy
 from aynthor.core.models import CompressionFormat
 from aynthor.core.presets import PresetTable
 from aynthor.core.settings import FormatSettings
@@ -78,7 +79,7 @@ def load_into(settings: FormatSettings) -> None:
     store = _store()
     settings.output_dir = str(store.value("job/output_dir", ""))
     settings.esde_root = str(store.value("job/esde_root", ""))
-    settings.on_conflict = str(store.value("job/on_conflict", "skip"))
+    settings.on_conflict = conflict_policy(str(store.value("job/on_conflict", "skip")))
     settings.keys_path = str(store.value("job/keys_path", ""))
 
     raw_flag = store.value("job/game_folders", None)

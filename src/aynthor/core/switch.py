@@ -26,6 +26,15 @@ SWITCH_EXTENSIONS = frozenset({".nsp", ".xci", ".nsz", ".xcz"})
 
 _TITLE_ID = re.compile(r"0100[0-9A-Fa-f]{12}", re.I)
 
+# The bits of a title id that say which part of a title this is, rather than
+# which title. See `title_family`.
+_FAMILY_MASK = ~0x1FFF
+
+# `[DLC]`, `(update)`, `[v1.2.0]`: what a dumper wrote about the file, as
+# opposed to the title itself. Read before the title id; the title is read
+# only when there is no id at all.
+_BRACKETED_TAG = re.compile(r"[\[({]([^\[\](){}]*)[\])}]")
+
 _UPDATE_WORD = re.compile(
     r"\b(update|upd|patch)\b|\bv\d+(?:\.\d+){1,3}\b|\b\d+\.\d+(?:\.\d+){1,2}\b",
     re.I,
@@ -69,10 +78,31 @@ def is_switch_rom(path: Path) -> bool:
 
 
 def title_family(path: Path) -> str:
+    """The id a base game, its update and its DLC all share.
+
+    A title id is 16 hex digits and the low 13 bits are the content type:
+    a base ends `…000`, its update is base + 0x800, and its DLC ids run from
+    base + 0x1001 upwards. Masking those bits off is what puts the three in
+    one family.
+
+    This used to keep the first 13 characters, which is right for an update
+    (only the last three digits move) and wrong for DLC, whose fourth digit
+    from the end moves too. Real DLC therefore never joined its base:
+    `01007EF00011E000` and `01007EF00011F001` are Tears of the Kingdom and
+    its DLC, and the old prefix made them two different games.
+    """
     found = _TITLE_ID.search(path.stem)
     if not found:
         return ""
-    return found.group().upper()[:13]
+    return f"{int(found.group(), 16) & _FAMILY_MASK:016X}"
+
+
+def _id_says_base(stem: str) -> bool:
+    """The name carries a title id and that id is a base game's."""
+    found = _TITLE_ID.search(stem)
+    if found is None:
+        return False
+    return found.group().upper().endswith("000")
 
 
 def _readable(name: str) -> str:
@@ -83,13 +113,25 @@ def _readable(name: str) -> str:
 
 
 def detect_content_type(path: Path) -> ContentType:
-    name = _readable(path.stem)
-    if _UPDATE_WORD.search(name):
+    """Base, update or DLC, read from the dump name.
+
+    A marker a dumper put in brackets is read first, because `[DLC]` is a
+    statement about the file and beats everything. After that the title id
+    decides, and only a file with no id falls back to reading the bare title.
+
+    That order matters because these words are also ordinary English. The
+    Jackbox Party Pack 8 is a base game whose name contains "pack", and
+    matching the whole title first typed it as DLC, merged it with Party
+    Pack 9 under a truncated name, and warned about DLC with no base.
+    """
+    stem = path.stem
+    tagged = " ".join(_readable(tag) for tag in _BRACKETED_TAG.findall(stem))
+    if _UPDATE_WORD.search(tagged):
         return ContentType.UPDATE
-    if _DLC_WORD.search(name):
+    if _DLC_WORD.search(tagged):
         return ContentType.DLC
 
-    tid = _TITLE_ID.search(path.stem)
+    tid = _TITLE_ID.search(stem)
     if tid:
         tid_val = tid.group().upper()
         if tid_val.endswith("800"):
@@ -98,6 +140,11 @@ def detect_content_type(path: Path) -> ContentType:
             return ContentType.BASE
         return ContentType.DLC
 
+    name = _readable(stem)
+    if _UPDATE_WORD.search(name):
+        return ContentType.UPDATE
+    if _DLC_WORD.search(name):
+        return ContentType.DLC
     return ContentType.BASE
 
 
@@ -108,7 +155,13 @@ def normalize_game_name(path: Path) -> str:
     name = re.sub(r"\bv\d+\b", "", name, flags=re.I)
     name = re.sub(r"\b\d+\.\d+(?:\.\d+)*\b", "", name)
     name = re.sub(r"\s+", " ", name).strip(" .-_")
-    name = _TRAILING_JUNK.sub("", name).strip(" .-_")
+    if not _id_says_base(path.stem):
+        # Only a file that might be an add-on gets its tail trimmed. When the
+        # title id ends `000` the file is the base game and every word in its
+        # name is part of the title: "The Jackbox Party Pack 8" was being cut
+        # down to "The Jackbox", which is not a game and grouped Pack 8 and
+        # Pack 9 into one folder.
+        name = _TRAILING_JUNK.sub("", name).strip(" .-_")
     name = _drop_repeated_tail(name)
     return name or _readable(path.stem) or path.stem
 

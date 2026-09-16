@@ -129,3 +129,28 @@ def test_the_platform_menu_lists_every_esde_folder():
     extra = sorted(set(listed) - set(ESDE_PLATFORM_FOLDERS))
     assert missing == []
     assert extra == []
+
+
+def test_the_platform_folder_nearest_the_file_wins():
+    """`platform_from_path` read the path left to right, so an ordinary
+    directory on the way down outranked the real platform folder:
+    `D:/Games/Steam/ROMs/ps2/Game.iso` came back as `steam`, which has no
+    preset, so the platform was dropped and the CHD was written back into the
+    Steam folder instead of onto the card. `C:/Users/PC/...` did the same to
+    anyone whose account folder is called PC."""
+    from aynthor.core.esde import platform_from_path
+
+    assert platform_from_path(Path("D:/Games/Steam/ROMs/ps2/Persona 4.iso")) == "ps2"
+    assert platform_from_path(Path("C:/Users/PC/ROMs/gc/Metroid.iso")) == "gc"
+    assert platform_from_path(Path("C:/Users/me/Downloads/Game.iso")) == ""
+
+
+def test_search_dirs_does_not_list_one_folder_twice(tmp_path: Path, monkeypatch):
+    """It tries both the resolved root and the one it was given. Those can be
+    two spellings of the same directory, and the de-duplication compared the
+    spellings, so every title in the folder was found -- and queued -- twice."""
+    from aynthor.core.esde import search_dirs
+
+    (tmp_path / "ROMs" / "psx").mkdir(parents=True)
+    monkeypatch.chdir(tmp_path)
+    assert len(search_dirs(Path("ROMs"), "psx")) == 1

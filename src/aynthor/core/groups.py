@@ -82,10 +82,31 @@ def discover_folders(root: Path) -> list[Path]:
     # whose children (psx, snes, ...) are the folders they want to see.
     if is_game_folder(root) or is_platform_folder(root) or not child_dirs:
         found.append(root)
-    for path in root.rglob("*"):
-        if path.is_dir() and _keep_dir(path):
-            found.append(path)
+    found.extend(_walk_dirs(root))
     return _unique_paths(found)
+
+
+def _walk_dirs(root: Path) -> list[Path]:
+    """Every directory under `root`, not descending into a skipped one.
+
+    `rglob` walks the whole tree and the skip test was applied to each path on
+    its own, so the children of a skipped folder came back even though the
+    folder did not. Adding a card root therefore queued
+    `System Volume Information/WPSettings` and `.git/objects` as drop targets
+    with no parent to attach to, and `.Trash-1000/files/Game.chd` was offered
+    as a live game folder.
+    """
+    found: list[Path] = []
+    try:
+        children = sorted(p for p in root.iterdir() if p.is_dir())
+    except OSError:
+        return found
+    for child in children:
+        if not _keep_dir(child):
+            continue
+        found.append(child)
+        found.extend(_walk_dirs(child))
+    return found
 
 
 def folder_kind(path: Path) -> str:
@@ -151,14 +172,27 @@ def rename_game_folder(folder: Path, new_stem: str) -> Path:
         return folder
     if target.exists():
         raise FileExistsError(f"already exists: {target.name}")
+    # Everything that can refuse is checked before anything moves. The folder
+    # used to be renamed first and the primary ROM second, so a folder holding
+    # both `Old.nsp` (the game) and `New.nsp` (a DLC that happened to carry the
+    # new name) ended up renamed on disk and then aborted: `New.nsp/` with the
+    # DLC as its primary and the real game beside it under the old name. That
+    # is exactly the unlaunchable state the primary rename exists to prevent,
+    # and the caller's "could not rename" left the queue pointing at a folder
+    # that no longer existed.
     primary_name = folder.name
+    primary = folder / primary_name
+    renames_primary = primary.is_file() and primary_name != target.name
+    if renames_primary and (folder / target.name).exists():
+        raise FileExistsError(f"already exists: {target.name}")
+
     folder.rename(target)
-    primary = target / primary_name
-    desired = target / target.name
-    if primary.is_file() and primary != desired:
-        if desired.exists():
-            raise FileExistsError(f"already exists: {desired.name}")
-        primary.rename(desired)
+    if renames_primary:
+        try:
+            (target / primary_name).rename(target / target.name)
+        except OSError:
+            target.rename(folder)
+            raise
     return target
 
 

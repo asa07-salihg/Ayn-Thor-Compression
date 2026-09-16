@@ -18,13 +18,14 @@ Reference
 
 from __future__ import annotations
 
+import os
 import re
 import shutil
 import subprocess
 import threading
 from abc import ABC, abstractmethod
 from collections.abc import Callable
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from pathlib import Path
 
 from aynthor.core.models import CompressionFormat, ConversionJob, ConversionMode
@@ -127,23 +128,43 @@ def _copy_with_progress(
     on_progress: Callable[[int], None] | None = None,
 ) -> None:
     """Copy `src` to `dst`, reporting 0-100. Always copies; delete-source is
-    the runner's job, so a same-volume rename here would surprise callers."""
+    the runner's job, so a same-volume rename here would surprise callers.
+
+    Written to a temporary name beside the destination and renamed at the
+    end. A card that fills up halfway through a 20 GB ISO used to leave a
+    9 GB file at the output path, and the default conflict policy is Skip,
+    so the next run dropped that row and never mentioned the truncated ROM
+    again.
+
+    Permissions are carried across but the timestamp is not. `copystat` put
+    the source's mtime on the new file, and the runner proves an output
+    belongs to this run by its mtime before it will delete a source: with
+    the old timestamp copied over, delete-source silently never fired and
+    said the output "was already there".
+    """
     total = src.stat().st_size
+    partial = dst.with_name(dst.name + ".aynthor-part")
     copied = 0
     last = -1
-    with src.open("rb") as incoming, dst.open("wb") as outgoing:
-        while True:
-            chunk = incoming.read(_COPY_CHUNK)
-            if not chunk:
-                break
-            outgoing.write(chunk)
-            copied += len(chunk)
-            if on_progress and total > 0:
-                pct = min(99, int(copied * 100 / total))
-                if pct != last:
-                    last = pct
-                    on_progress(pct)
-    shutil.copystat(src, dst)
+    try:
+        with src.open("rb") as incoming, partial.open("wb") as outgoing:
+            while True:
+                chunk = incoming.read(_COPY_CHUNK)
+                if not chunk:
+                    break
+                outgoing.write(chunk)
+                copied += len(chunk)
+                if on_progress and total > 0:
+                    pct = min(99, int(copied * 100 / total))
+                    if pct != last:
+                        last = pct
+                        on_progress(pct)
+        shutil.copymode(src, partial)
+        os.replace(partial, dst)
+    except BaseException:
+        with suppress(OSError):
+            partial.unlink(missing_ok=True)
+        raise
     if on_progress:
         on_progress(100)
 

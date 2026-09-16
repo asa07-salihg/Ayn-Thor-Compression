@@ -131,3 +131,83 @@ def test_game_folders_off_writes_beside_the_source(tmp_path: Path):
     source.parent.mkdir(parents=True)
     result = _out(source, CompressionFormat.CHD, FormatSettings())
     assert result == tmp_path / "psx" / "Chrono Cross.chd"
+
+
+# --------------------------------------------------------------------------
+# Regressions from the 1.3.2 audit.
+
+
+def test_a_zero_padded_disc_one_is_still_disc_one():
+    """The disc token was compared as text, so `01` was not disc 1. A
+    redump-style set produced `Final Fantasy VII.chd/` holding only
+    `(Disc 01)`, `(Disc 02)` and `(Disc 03)` -- a game folder with no file
+    matching its own name, which ES-DE hands to the emulator as a directory."""
+    folder, name = game_folder_layout("Final Fantasy VII (Disc 01).chd")
+    assert (folder, name) == ("Final Fantasy VII.chd", "Final Fantasy VII.chd")
+    folder, name = game_folder_layout("Final Fantasy VII (Disc 02).chd")
+    assert (folder, name) == (
+        "Final Fantasy VII.chd", "Final Fantasy VII (Disc 02).chd")
+
+
+def test_a_multi_disc_archive_keeps_its_discs_apart():
+    """`Disc 1/Game.iso` and `Disc 2/Game.iso` are one game whose discs are
+    told apart by their folders. Naming the output after the file alone gave
+    both rows the same path and one disc overwrote the other."""
+    from aynthor.core.output import member_name
+
+    assert member_name("Disc 1/Game.iso") == "Game (Disc 1).iso"
+    assert member_name("Disc 2/Game.iso") == "Game (Disc 2).iso"
+    assert member_name("Game.iso") == "Game.iso"
+    # A disc tag already in the name is left alone.
+    assert member_name("CD 2/Game (Disc 2).iso") == "Game (Disc 2).iso"
+
+
+def test_a_title_with_a_full_stop_in_it_survives_disc_stripping():
+    """`strip_disc_tag` used `Path.stem`, which cuts at the last dot. "New
+    Super Mario Bros. U Deluxe" came back as "New Super Mario Bros", so an
+    update never matched the folder of that name already on the card."""
+    from aynthor.core.output import strip_disc_tag
+
+    assert strip_disc_tag("New Super Mario Bros. U Deluxe") == \
+        "New Super Mario Bros. U Deluxe"
+    assert strip_disc_tag("Game (Disc 2).chd") == "Game"
+
+
+def test_a_name_is_trimmed_after_it_is_cut_to_length():
+    """Trimming and then truncating can put a trailing space or dot back on
+    the end, and Windows will create such a folder and then refuse to open
+    it."""
+    from aynthor.core.output import safe_folder_name
+
+    name = "A" * 119 + " tail"
+    assert not safe_folder_name(name).endswith((" ", "."))
+    assert safe_folder_name("Tab\there") == "Tab_here"
+
+
+def test_joining_a_folder_that_already_has_its_primary_keeps_the_new_name():
+    """Otherwise the joined file is given the folder's own name, which is the
+    path of the ROM already sitting there: with overwrite selected the extra
+    was copied straight over the base game."""
+    from aynthor.core.output import file_name_in_folder
+
+    assert file_name_in_folder(
+        "Ys X Nordics.nsp", "Ys X Nordics Extra.nsp", {"keep_name": True},
+    ) == "Ys X Nordics Extra.nsp"
+    assert file_name_in_folder(
+        "Ys X Nordics.nsp", "Ys X Nordics.nsp", {},
+    ) == "Ys X Nordics.nsp"
+
+
+def test_the_roms_root_cache_can_be_dropped(tmp_path: Path):
+    """Someone who points the app at a blank card and then copies an ES-DE
+    tree onto it has changed the answer. The cache is only true for the length
+    of one fill."""
+    from aynthor.core.output import forget_roms_root, platform_destination
+
+    settings = FormatSettings()
+    settings.esde_root = str(tmp_path)
+    assert platform_destination(settings, "psx") == tmp_path / "psx"
+
+    (tmp_path / "ROMs").mkdir()
+    forget_roms_root()
+    assert platform_destination(settings, "psx") == tmp_path / "ROMs" / "psx"

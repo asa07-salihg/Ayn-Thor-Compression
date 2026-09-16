@@ -21,6 +21,9 @@ Reference
 
 from __future__ import annotations
 
+import os
+import shutil
+import tempfile
 from pathlib import Path
 
 from aynthor.core.converters.base import BaseConverter, failure, is_decompress
@@ -53,25 +56,75 @@ class NszConverter(BaseConverter):
             return False, "Open works on .nsz and .xcz. Use Compress for .nsp and .xci."
 
         command, workdir, extra_env = nsz_command()
-        args = self._decompress_args(job) if decompressing else self._compress_args(job)
-        with staged_keys(keys_file, workdir):
-            result = run_tool(
-                command[0], [*command[1:], *args],
-                cwd=workdir, env=extra_env, on_output=self.emit,
-            )
-        return (True, "NSZ done.") if result.returncode == 0 else failure(result)
+        try:
+            job.output_path.parent.mkdir(parents=True, exist_ok=True)
+            staging = Path(tempfile.mkdtemp(
+                prefix=".aynthor-nsz-", dir=job.output_path.parent))
+        except OSError as exc:
+            return False, f"Could not prepare the output folder: {exc}"
+
+        try:
+            args = (self._decompress_args(job, staging) if decompressing
+                    else self._compress_args(job, staging))
+            with staged_keys(keys_file, workdir):
+                result = run_tool(
+                    command[0], [*command[1:], *args],
+                    cwd=workdir, env=extra_env, on_output=self.emit,
+                )
+            if result.returncode != 0:
+                return failure(result)
+            return self._collect(job, staging)
+        finally:
+            shutil.rmtree(staging, ignore_errors=True)
 
     @staticmethod
-    def _decompress_args(job: ConversionJob) -> list[str]:
+    def _collect(job: ConversionJob, staging: Path) -> tuple[bool, str]:
+        """Move what nsz wrote to the path the queue promised.
+
+        nsz names its own output, from the *input* stem, and only takes a
+        directory. So `Ys X Nordics [0100BAC01E57E800][v0].nsp` came out as
+        `Ys X Nordics [0100BAC01E57E800][v0].nsz` while the queue, the game
+        folder and the conflict policy had all agreed on `Ys X Nordics.nsz`.
+        Two things went wrong with that. The folder ES-DE launches is the one
+        holding a file with the folder's own name, and that file was never
+        written, so the title did not appear. And with the policy set to
+        rename, the queue had moved the output aside to `Game_1.nsz` while
+        nsz still wrote `Game.nsz` -- straight over the file the policy
+        existed to protect.
+
+        Letting nsz name a file inside a private folder and renaming it
+        afterwards keeps its naming and honours the policy. The rename is on
+        the same volume, so nothing is copied twice.
+        """
+        produced = sorted(
+            (path for path in staging.rglob("*") if path.is_file()),
+            key=lambda path: path.stat().st_size,
+            reverse=True,
+        )
+        if not produced:
+            return False, "nsz reported success but wrote nothing."
+        wanted = job.output_path.suffix.lower()
+        chosen = next(
+            (path for path in produced if path.suffix.lower() == wanted), produced[0])
+        try:
+            if job.output_path.exists():
+                job.output_path.unlink()
+            os.replace(chosen, job.output_path)
+        except OSError as exc:
+            return False, f"Could not move the result into place: {exc}"
+        return True, "NSZ done."
+
+    @staticmethod
+    def _decompress_args(job: ConversionJob, staging: Path) -> list[str]:
         args = ["-D"]
         if threads := job.options.get("threads", 0):
             args += ["-t", str(threads)]
-        # nsz names the output itself from the title metadata, so it takes a
-        # directory rather than a file path.
-        return [*args, "-o", str(job.output_path.parent), str(job.input_path)]
+        # nsz names the output itself from the input stem, so it takes a
+        # directory rather than a file path. `_collect` renames afterwards.
+        return [*args, "-o", str(staging), str(job.input_path)]
 
     @staticmethod
-    def _compress_args(job: ConversionJob) -> list[str]:
+    def _compress_args(job: ConversionJob, staging: Path) -> list[str]:
         opts = job.options
         args = ["-C", "-l", str(opts.get("level", 18))]
         if opts.get("long"):
@@ -91,4 +144,4 @@ class NszConverter(BaseConverter):
             args += ["-t", str(threads)]
         if parallel := opts.get("multi"):
             args += ["-m", str(parallel)]
-        return [*args, "-o", str(job.output_path.parent), str(job.input_path)]
+        return [*args, "-o", str(staging), str(job.input_path)]

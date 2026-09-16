@@ -71,6 +71,7 @@ from aynthor.core.modes import (
 )
 from aynthor.core.output import (
     disc_part,
+    forget_roms_root,
     is_game_folder,
     output_for,
     platform_destination,
@@ -213,8 +214,15 @@ class QueueTable(QTreeWidget):
         "Done": "ok", "Failed": "error", "Waiting": "textThird",
         "Already on card": "textThird",
     }
+    # Options that say something about the *file*, not about the format it is
+    # being converted to, and so survive a format or platform change.
+    # `disk_anchor` in particular is what tells `core.output` to keep the name
+    # of a folder already on the card: losing it on a format change sent the
+    # row to a second, parallel game folder while the tree still drew it
+    # inside the first one.
     _FORMAT_NEUTRAL: ClassVar[tuple[str, ...]] = (
-        "game_group", "content_type", "game_folder")
+        "game_group", "content_type", "game_folder",
+        "disk_anchor", "on_disk", "title_family", "keep_name")
 
     def __init__(self) -> None:
         super().__init__()
@@ -291,6 +299,7 @@ class QueueTable(QTreeWidget):
     ) -> tuple[int, list[str]]:
         self._settings = settings
         self._join_decisions = {}
+        forget_roms_root()
         added = 0
         skipped: list[str] = []
         labels = labels or {}
@@ -364,6 +373,11 @@ class QueueTable(QTreeWidget):
         options = dict(item.tool_options or {})
         options["disk_anchor"] = key
         options["game_folder"] = match.name
+        if (match / match.name).exists():
+            # The folder already holds the file ES-DE launches. Whatever this
+            # row is, it is not that file, so it must keep its own name rather
+            # than be written over the game already on the card.
+            options["keep_name"] = True
         item.tool_options = options
         if item.format is not None:
             item.output = output_for(
@@ -411,7 +425,8 @@ class QueueTable(QTreeWidget):
                 size = member.stat().st_size
             except OSError:
                 size = 0
-            self._total_bytes += max(0, size)
+            # Deliberately not added to `_total_bytes`: this file is already
+            # where it belongs and nothing will be done to it.
             self._numeric(node, self.COL_SIZE, human_size(size), size)
             self._numeric(node, self.COL_SAVED, "", -1)
             self._refresh_item(node)
@@ -514,9 +529,26 @@ class QueueTable(QTreeWidget):
                 stack.append(node.child(i))
         return found
 
+    def _is_on_disk(self, node: QTreeWidgetItem) -> bool:
+        """A row seeded from a game folder already on the card."""
+        options = node.data(self.COL_FILE, _ROLE_OPTIONS) or {}
+        return bool(options.get("on_disk"))
+
+    def running_files(self) -> list[QTreeWidgetItem]:
+        """The rows that will actually run.
+
+        A row seeded from the card is shown so the user can see what is
+        already in the folder. It has no format and `build_jobs` skips it, but
+        it was counted in the footer and its size added to the total anyway,
+        so a card holding a 100 KB base game and one new 500 byte extra
+        reported "2 files, 98.1 KB" and then ran nothing.
+        """
+        return [node for node in self.files() if not self._is_on_disk(node)]
+
     def rowCount(self) -> int:
-        """How many files will run. Empty folder nodes are not files."""
-        return len(self.files())
+        """How many files will run. Empty folder nodes are not files, and
+        neither are the rows already sitting on the card."""
+        return len(self.running_files())
 
     def item(self, row: int, column: int = 0) -> _ColumnView | None:
         files = self.files()
@@ -539,6 +571,8 @@ class QueueTable(QTreeWidget):
                 self._queued.add((path, member))
             if item_id is not None:
                 self._by_id[item_id] = node
+            if self._is_on_disk(node):
+                continue
             sort = node.data(self.COL_SIZE, _ROLE_SORT)
             if isinstance(sort, (int, float)) and sort > 0:
                 self._total_bytes += int(sort)
@@ -815,6 +849,13 @@ class QueueTable(QTreeWidget):
         parent = node.parent()
         if parent is not None:
             self._refresh_folder_status(parent)
+            # Again, now that the child has its Becomes and Platform text. The
+            # `_align_folder` call above runs before `_refresh_item` writes
+            # them, so the folder's shared label was computed from the old
+            # children plus one empty string: adding a second file to a folder
+            # set to Move left the folder still reading "Move" when its
+            # children no longer agreed.
+            self._align_folder(parent)
 
     def _write(self, node: QTreeWidgetItem, item: QueueItem) -> None:
         grouped = self._is_folder(node.parent())
@@ -872,11 +913,13 @@ class QueueTable(QTreeWidget):
         if not self._is_game_node(folder):
             self._refresh_folder_status(folder)
             self._refresh_folder_becomes(folder)
+            self._refresh_folder_platform(folder)
             return
         # A folder locked to one already on the card keeps that name.
         if folder.data(self.COL_FILE, _ROLE_DISK_ANCHOR):
             self._refresh_folder_status(folder)
             self._refresh_folder_becomes(folder)
+            self._refresh_folder_platform(folder)
             return
         new_name = ""
         for i in range(folder.childCount()):
@@ -910,6 +953,30 @@ class QueueTable(QTreeWidget):
                 self._refresh_item(child)
         self._refresh_folder_status(folder)
         self._refresh_folder_becomes(folder)
+        self._refresh_folder_platform(folder)
+
+    def _refresh_folder_platform(self, folder: QTreeWidgetItem) -> None:
+        """Show the children's platform on the game row when they agree.
+
+        The folder's platform is what a file dropped onto it inherits
+        (`_sync_node`), so leaving it stale after the children were retargeted
+        sent the dropped file to a different ES-DE folder from the row it was
+        dropped next to.
+        """
+        if not self._is_game_node(folder):
+            return
+        found = {
+            folder.child(i).data(self.COL_PLATFORM, _ROLE_PLATFORM)
+            for i in range(folder.childCount())
+            if self._is_file(folder.child(i))
+        }
+        found.discard(None)
+        found.discard("")
+        if len(found) != 1:
+            return
+        platform = next(iter(found))
+        folder.setData(self.COL_PLATFORM, _ROLE_PLATFORM, platform)
+        folder.setText(self.COL_PLATFORM, _platform_label(platform))
 
     def _refresh_folder_becomes(self, folder: QTreeWidgetItem) -> None:
         """Show a shared Becomes label on the game row when every child agrees."""
@@ -984,9 +1051,18 @@ class QueueTable(QTreeWidget):
     def _sort_tree(self) -> None:
         """Empty folders last at every level, so filled titles stay in view."""
         folders = self._all_folders()
+        # Qt keeps expanded state in the view, not in the item, and sorting
+        # re-orders by detaching every node and adding it back, which throws
+        # that state away. This runs at the end of every add, so each new file
+        # collapsed the whole tree: a folder of two Switch dumps showed two
+        # collapsed headers and no file rows at all, and Expand all was undone
+        # by the next file added.
+        expanded = {id(folder): folder.isExpanded() for folder in folders}
         self._sort_siblings(None)
         for folder in folders:
             self._sort_siblings(folder)
+        for folder in folders:
+            folder.setExpanded(expanded.get(id(folder), False))
 
     def _sort_siblings(self, parent: QTreeWidgetItem | None) -> None:
         if parent is None:
@@ -1091,6 +1167,7 @@ class QueueTable(QTreeWidget):
 
     def apply_settings(self, settings: FormatSettings) -> None:
         self._settings = settings
+        forget_roms_root()
         for node in self.files():
             self._refresh_item(node)
         self.apply_empty_folder_setting()
@@ -1126,6 +1203,18 @@ class QueueTable(QTreeWidget):
         files = self.files()
         parents: set[int] = set()
         for row in rows:
+            if self._is_on_disk(files[row]):
+                # Nothing will run for it, so telling it it is "Waiting" is a
+                # promise the queue cannot keep.
+                continue
+            if fmt not in {info.format for info in self._accepted_formats(row)}:
+                # The menu was built from the row that was right-clicked and
+                # then applied to the whole selection, so picking "7z / ZIP"
+                # on a selection holding a PS2 ISO archived the ISO instead of
+                # making a CHD of it, and picking "CHD" on one holding a SNES
+                # cartridge handed the cartridge to chdman. `set_platform`
+                # has always checked this; these two did not.
+                continue
             node = files[row]
             node.setData(self.COL_BECOMES, _ROLE_FORMAT, fmt.value)
             node.setData(self.COL_BECOMES, _ROLE_MODE, ConversionMode.COMPRESS.value)
@@ -1151,6 +1240,14 @@ class QueueTable(QTreeWidget):
         parents: set[int] = set()
         for row in rows:
             node = files[row]
+            if self._is_on_disk(node):
+                continue
+            if not self._offers_mode(node, mode):
+                # NDS trim only goes one way, so "Decompress instead of
+                # convert" chosen on a mixed selection gave a cartridge row a
+                # direction its converter does not have and an output called
+                # `Cart.out`.
+                continue
             node.setData(self.COL_BECOMES, _ROLE_MODE, mode.value)
             options = dict(node.data(self.COL_FILE, _ROLE_OPTIONS) or {})
             if intent:
@@ -1200,11 +1297,14 @@ class QueueTable(QTreeWidget):
     # --------------------------------------------------------------- results
 
     def update_status(self, row: int, status: str, message: str = "") -> None:
+        # `row` is the row id the job was built with, not a position. It used
+        # to fall back to `files()[row]`, which is a different row entirely:
+        # ids count from one in the order files were added and `files()` is
+        # zero-based in tree order. Removing a row mid-run dropped its id from
+        # the map, and every later result for that id was painted onto an
+        # innocent row, overwriting its real status. A result with no row left
+        # to show it belongs nowhere.
         node = self._by_id.get(row)
-        if node is None:
-            files = self.files()
-            if 0 <= row < len(files):
-                node = files[row]
         if node is None:
             return
         node.setText(self.COL_STATUS, status)
@@ -1215,7 +1315,7 @@ class QueueTable(QTreeWidget):
             node.setToolTip(self.COL_FILE, message)
 
     def record_result(self, row: int, input_size: int, output_size: int) -> None:
-        node = self._by_id.get(row) or (self.files()[row] if row < len(self.files()) else None)
+        node = self._by_id.get(row)
         if node is None:
             return
         if input_size <= 0 or output_size <= 0:
@@ -1524,6 +1624,20 @@ class QueueTable(QTreeWidget):
         rows = self.selected_rows()
         return rows if row in rows and len(rows) > 1 else [row]
 
+    @staticmethod
+    def _offers_mode(node: QTreeWidgetItem, mode: ConversionMode) -> bool:
+        """Whether the row's format has this direction at all."""
+        if mode is ConversionMode.MOVE:
+            return True
+        value = node.data(QueueTable.COL_BECOMES, _ROLE_FORMAT)
+        if not value:
+            return False
+        try:
+            fmt = CompressionFormat(value)
+        except ValueError:
+            return False
+        return any(info.mode == mode for info in FORMAT_MODES.get(fmt, ()))
+
     def _accepted_formats(self, row: int):
         node = self.files()[row]
         path: Path = node.data(self.COL_FILE, _ROLE_PATH)
@@ -1536,6 +1650,8 @@ class QueueTable(QTreeWidget):
         parents: set[int] = set()
         for row in rows:
             node = files[row]
+            if self._is_on_disk(node):
+                continue
             node.setData(self.COL_PLATFORM, _ROLE_PLATFORM, platform)
             preset = PRESETS.get(platform)
             if preset is not None and preset.format in {

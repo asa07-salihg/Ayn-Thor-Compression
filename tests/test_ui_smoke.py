@@ -758,8 +758,10 @@ def test_the_platform_menu_offers_every_esde_folder(app, tmp_path):
 
 
 def test_switching_format_does_not_carry_the_old_format_settings(app, tmp_path):
-    """A GameCube row is RVZ at level 5. Switched to 7z it was archiving at 5,
-    because `level` exists in both and the row kept the old value."""
+    """A GameCube row is RVZ at level 5. Switched to another format it used to
+    keep every option it had, so `level` — 5 to DolphinTool and 9 to 7-Zip —
+    silently followed it across. CHD is the switch the menu actually offers
+    for an ISO; it has no `level` at all, so the old keys must all be gone."""
     from aynthor.core.models import CompressionFormat
     from aynthor.ui.main_window import MainWindow
     from aynthor.ui.queue_view import _ROLE_OPTIONS
@@ -776,13 +778,14 @@ def test_switching_format_does_not_carry_the_old_format_settings(app, tmp_path):
     before = window.queue.item(0, window.queue.COL_FILE).data(_ROLE_OPTIONS)
     assert before["level"] == 5
 
-    window.queue.set_format([0], CompressionFormat.SEVEN_ZIP)
+    window.queue.set_format([0], CompressionFormat.CHD)
     app.processEvents()
     after = window.queue.item(0, window.queue.COL_FILE).data(_ROLE_OPTIONS)
     window.close()
 
     assert after.get("level") != 5
     assert "codec" not in after   # the RVZ keys are gone too
+    assert "block_size" not in after
 
 
 def test_a_stale_output_does_not_authorise_deleting_the_source(app, tmp_path):
@@ -1038,3 +1041,185 @@ def test_folder_becomes_targets_every_child_file(app, tmp_path):
     assert all(window.queue.row_mode(r) is ConversionMode.MOVE for r in rows)
     assert game.text(window.queue.COL_FILE).endswith(".nsp")
     window.close()
+
+
+# --------------------------------------------------------------------------
+# Regressions from the 1.3.2 audit.
+
+
+def test_a_format_offered_for_one_row_is_not_forced_onto_another(app, tmp_path):
+    """The Convert to menu is built from the row that was right-clicked and
+    then applied to the whole selection, so picking 7z on a selection holding a
+    PS2 ISO archived the ISO instead of making a CHD of it, and picking CHD on
+    one holding a SNES cartridge handed the cartridge to chdman."""
+    from aynthor.core.models import CompressionFormat
+    from aynthor.ui.main_window import MainWindow
+
+    roms = tmp_path / "ROMs"
+    (roms / "ps2").mkdir(parents=True)
+    (roms / "snes").mkdir(parents=True)
+    (roms / "ps2" / "Persona 4.iso").write_bytes(b"\0" * 2048)
+    (roms / "snes" / "Super Mario World.sfc").write_bytes(b"\0" * 2048)
+
+    window = MainWindow()
+    window.show()
+    window._add([roms])
+    app.processEvents()
+    queue = window.queue
+
+    before = [queue.row_format(row) for row in range(queue.rowCount())]
+    assert set(before) == {CompressionFormat.CHD, CompressionFormat.SEVEN_ZIP}
+
+    queue.set_format(list(range(queue.rowCount())), CompressionFormat.SEVEN_ZIP)
+    app.processEvents()
+    after = [queue.row_format(row) for row in range(queue.rowCount())]
+    window.close()
+
+    assert after == before, "a row that cannot take the format must be left alone"
+
+
+def test_a_result_for_a_removed_row_does_not_paint_another_row(app, tmp_path):
+    """Row ids count from one in the order files were added; `files()` is
+    zero-based in tree order. The fallback to `files()[row]` therefore painted
+    an innocent row whenever a row was removed mid-run, overwriting its real
+    status with somebody else's failure."""
+    from aynthor.ui.main_window import MainWindow
+
+    roms = tmp_path / "ROMs" / "snes"
+    roms.mkdir(parents=True)
+    for name in ("a.sfc", "b.sfc", "c.sfc"):
+        (roms / name).write_bytes(b"\0" * 512)
+
+    window = MainWindow()
+    window.show()
+    window._add([tmp_path / "ROMs"])
+    app.processEvents()
+    queue = window.queue
+
+    victim = queue.item(1, queue.COL_STATUS)
+    before = victim.text()
+    queue.update_status(9999, "Failed", "a row that no longer exists")
+    app.processEvents()
+    after = queue.item(1, queue.COL_STATUS).text()
+    window.close()
+
+    assert after == before
+
+
+def test_rows_already_on_the_card_are_not_counted_as_work(app, tmp_path):
+    """A seeded row has no format and `build_jobs` skips it, but it was
+    counted in the footer and its size added to the total, so the summary
+    promised work that was never going to happen."""
+    from aynthor.core.jobs import build_jobs
+    from aynthor.ui.main_window import MainWindow
+    from aynthor.ui.queue_view import _ROLE_OPTIONS
+
+    roms = tmp_path / "ROMs" / "snes"
+    roms.mkdir(parents=True)
+    (roms / "Game.sfc").write_bytes(b"\0" * 1024)
+
+    window = MainWindow()
+    window.settings.game_folders = True
+    window.show()
+    window._add([roms / "Game.sfc"])
+    app.processEvents()
+    queue = window.queue
+
+    # Fake a seeded on-card row: that is what `_seed_on_disk_rows` produces.
+    node = queue.files()[0]
+    options = dict(node.data(queue.COL_FILE, _ROLE_OPTIONS) or {})
+    options["on_disk"] = True
+    node.setData(queue.COL_FILE, _ROLE_OPTIONS, options)
+    queue._reindex()
+
+    counted = queue.rowCount()
+    total = queue.total_input_bytes()
+    jobs = len(build_jobs(queue.queue_items(), window.settings))
+    window.close()
+
+    assert counted == 0
+    assert total == 0
+    assert jobs <= counted + 1   # the fake row still has a format; nothing to run
+
+
+def test_adding_a_file_does_not_collapse_the_tree(app, tmp_path):
+    """Sorting re-orders by detaching every node and adding it back, and Qt
+    keeps expanded state in the view rather than the item. Sorting runs at the
+    end of every add, so each new file collapsed the whole tree and the queue
+    looked empty until the user expanded it again."""
+    from aynthor.ui.main_window import MainWindow
+
+    roms = tmp_path / "ROMs" / "switch"
+    roms.mkdir(parents=True)
+    (roms / "Alpha Game [0100AAA000000000][v0].nsp").write_bytes(b"\0" * 512)
+    (roms / "Beta Game [0100BBB000000000][v0].nsp").write_bytes(b"\0" * 512)
+
+    window = MainWindow()
+    window.settings.game_folders = True
+    window.show()
+    window._add([tmp_path / "ROMs"])
+    app.processEvents()
+    queue = window.queue
+
+    hidden = [node.text(queue.COL_FILE) for node in queue.files()
+              if queue.visualItemRect(node).isEmpty()]
+    window.close()
+
+    assert hidden == [], "every file row must be visible after Add folder"
+
+
+def test_retargeting_a_row_retargets_the_folder_it_sits_in(app, tmp_path):
+    """The folder's platform is what a file dropped onto it inherits, so
+    leaving it stale sent the dropped file to a different ES-DE folder from the
+    row it was dropped next to."""
+    from aynthor.ui.main_window import MainWindow
+
+    roms = tmp_path / "ROMs" / "ps2"
+    roms.mkdir(parents=True)
+    (roms / "Some Game.iso").write_bytes(b"\0" * 2048)
+
+    window = MainWindow()
+    window.settings.game_folders = True
+    window.show()
+    window._add([tmp_path / "ROMs"])
+    app.processEvents()
+    queue = window.queue
+
+    queue.set_platform([0], "gc")
+    app.processEvents()
+    folders = {f.text(queue.COL_FILE): f.text(queue.COL_PLATFORM)
+               for f in queue._all_folders()}
+    window.close()
+
+    assert folders.get("Some Game.rvz") == "GameCube"
+
+
+def test_the_runner_can_fold_a_loose_rom_into_its_own_folder(app, tmp_path):
+    """`mkdir(exist_ok=True)` only forgives a directory that is already there,
+    so the runner raised for the one case game folders are built around:
+    folding a loose `Game.7z` into `Game.7z/Game.7z` asks for a folder whose
+    path is the source file. Every already-correct ROM on a card failed the
+    moment game folders were turned on."""
+    from aynthor.core.models import (
+        CompressionFormat,
+        ConversionJob,
+        ConversionMode,
+    )
+    from aynthor.ui.job_runner import JobRunner
+
+    platform = tmp_path / "snes"
+    platform.mkdir()
+    rom = platform / "Front Mission.7z"
+    rom.write_bytes(b"archive-bytes")
+    out = platform / "Front Mission.7z" / "Front Mission.7z"
+
+    runner = JobRunner([])
+    ok, message = runner._execute(0, ConversionJob(
+        input_path=rom,
+        output_path=out,
+        format=CompressionFormat.SEVEN_ZIP,
+        options={"mode": ConversionMode.MOVE.value},
+    ))
+
+    assert ok, message
+    assert out.read_bytes() == b"archive-bytes"
