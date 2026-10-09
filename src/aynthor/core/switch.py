@@ -143,6 +143,10 @@ def detect_content_type(path: Path) -> ContentType:
     name = _readable(stem)
     if _UPDATE_WORD.search(name):
         return ContentType.UPDATE
+    # A cartridge is the base game. "Party Pack" is the title, and reading
+    # "pack" as DLC put the cart in its own folder beside the NSP update.
+    if path.suffix.lower() in {".xci", ".xcz"}:
+        return ContentType.BASE
     if _DLC_WORD.search(name):
         return ContentType.DLC
     return ContentType.BASE

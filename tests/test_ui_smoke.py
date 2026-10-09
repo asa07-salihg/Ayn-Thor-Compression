@@ -375,6 +375,76 @@ def test_switch_dlc_joins_the_base_game_tree(app, tmp_path):
     window.close()
 
 
+def test_xci_without_a_title_id_keeps_the_nsp_update(app, tmp_path):
+    """The cart has no title id, so a family lookup cannot see it. The update
+    still has to land in the cart's folder, and that folder keeps the cart's
+    extension rather than becoming `.nsz`."""
+    from aynthor.ui.main_window import MainWindow
+
+    folder = tmp_path / "switch"
+    folder.mkdir()
+    for name in (
+        "The Jackbox Party Pack 8.xci",
+        "The Jackbox Party Pack 8 [0100C5000EEC6800][v65536].nsp",
+    ):
+        (folder / name).write_bytes(b"\0" * 16)
+
+    window = MainWindow()
+    window.show()
+    window.settings.game_folders = True
+    window._add([folder])
+    app.processEvents()
+
+    games = [node for node in window.queue._all_folders()
+             if window.queue._is_game_node(node)]
+    assert len(games) == 1, [g.text(window.queue.COL_FILE) for g in games]
+    assert games[0].text(window.queue.COL_FILE).endswith(".xcz")
+    parts = {
+        window.queue.item(row, window.queue.COL_FILE).text():
+            window.queue.item(row, window.queue.COL_TYPE).text()
+        for row in range(window.queue.rowCount())
+    }
+    assert parts["The Jackbox Party Pack 8.xci"] == "Base"
+    assert any(part == "Update" for part in parts.values())
+    window.close()
+
+
+def test_the_part_cell_can_move_the_folder_onto_the_xci(app, tmp_path):
+    """Marking the cart as Base after it was read as DLC renames the tree to it."""
+    from aynthor.core.switch import ContentType
+    from aynthor.ui.main_window import MainWindow
+
+    folder = tmp_path / "switch"
+    folder.mkdir()
+    cart = "Game [DLC] [0100BAC01E57E000][v0].xci"
+    update = "Game [0100BAC01E57E800][v196608].nsp"
+    for name in (cart, update):
+        (folder / name).write_bytes(b"\0" * 16)
+
+    window = MainWindow()
+    window.show()
+    window.settings.game_folders = True
+    window._add([folder])
+    app.processEvents()
+
+    cart_row = next(
+        row for row in range(window.queue.rowCount())
+        if window.queue.item(row, window.queue.COL_FILE).text() == cart)
+    assert window.queue.item(cart_row, window.queue.COL_TYPE).text() == "DLC"
+    window.queue.set_part([cart_row], ContentType.BASE.value)
+    app.processEvents()
+
+    assert window.queue.item(cart_row, window.queue.COL_TYPE).text() == "Base"
+    games = [node for node in window.queue._all_folders()
+             if window.queue._is_game_node(node)]
+    assert len(games) == 1
+    assert games[0].text(window.queue.COL_FILE).endswith(".xcz")
+    parents = {window.queue.row_item(row).output.parent.name
+               for row in range(window.queue.rowCount())}
+    assert parents == {games[0].text(window.queue.COL_FILE)}, parents
+    window.close()
+
+
 def test_xci_base_keeps_nsp_update_and_dlc_in_same_folder(app, tmp_path):
     """Base.xci/Base.xci must own same-game .nsp Update/DLC — not invent Base.nsp/."""
     from aynthor.core.models import ConversionMode

@@ -81,6 +81,7 @@ from aynthor.core.output import (
 from aynthor.core.presets import PRESETS, detect_platform_format
 from aynthor.core.settings import FormatSettings
 from aynthor.core.switch import (
+    ContentType,
     canonical_title,
     detect_content_type,
     is_switch_rom,
@@ -208,7 +209,7 @@ class QueueTable(QTreeWidget):
      COL_BECOMES, COL_SIZE, COL_SAVED, COL_STATUS) = range(8)
     _HEADERS = ("File", "Game", "Part", "Platform", "Becomes", "Size", "Saved", "Status")
     _NUMERIC = (COL_SIZE, COL_SAVED)
-    _CLICKABLE = (COL_PLATFORM, COL_BECOMES)
+    _CLICKABLE = (COL_TYPE, COL_PLATFORM, COL_BECOMES)
 
     _STATUS_COLOURS: ClassVar[dict[str, str]] = {
         "Done": "ok", "Failed": "error", "Waiting": "textThird",
@@ -780,10 +781,12 @@ class QueueTable(QTreeWidget):
 
         group = group_folder_name(item, self._settings)
         family = str((item.tool_options or {}).get("title_family", ""))
-        if family:
-            matched = self._game_folder_for_family(family)
-            if matched is not None:
-                group = matched.text(self.COL_FILE)
+        # A cart often has no title id, so it cannot be found by family.
+        # Fall through to the shared title when the family lookup misses,
+        # otherwise `Game.xci` and `Game [0100…] Update.nsp` become two trees.
+        matched = self._game_folder_for_family(family) if family else None
+        if matched is not None:
+            group = matched.text(self.COL_FILE)
         elif item.game_group:
             matched, shared = self._game_folder_for_name_prefix(
                 item.game_group, item.platform)
@@ -1135,6 +1138,12 @@ class QueueTable(QTreeWidget):
                   if fmt else path)
 
         node.setText(self.COL_PLATFORM, _platform_label(platform) or "unknown")
+        if self._is_switch_file(node):
+            node.setToolTip(
+                self.COL_TYPE,
+                "Base, update or DLC. Click to correct it when the name was read wrong. "
+                "The game folder follows whichever file you mark as Base, so an XCI "
+                "cart keeps the tree even when the update is an NSP.")
         node.setToolTip(
             self.COL_PLATFORM,
             "Which ES-DE folder this file belongs to. It decides the settings, "
@@ -1645,6 +1654,73 @@ class QueueTable(QTreeWidget):
         extension = (Path(member).suffix if member else path.suffix).lower()
         return [info for info in FORMAT_CATALOG if extension in info.extensions]
 
+    def _is_switch_file(self, node: QTreeWidgetItem) -> bool:
+        """A Switch dump, including one pulled out of a zip or rar."""
+        if not self._is_file(node) or self._is_on_disk(node):
+            return False
+        path = node.data(self.COL_FILE, _ROLE_PATH)
+        member = node.data(self.COL_FILE, _ROLE_MEMBER) or ""
+        probe = Path(member).name if member else (path.name if isinstance(path, Path) else "")
+        if probe and is_switch_rom(Path(probe)):
+            return True
+        return (node.data(self.COL_PLATFORM, _ROLE_PLATFORM) or "") == "switch"
+
+    def _part_rows(self, node: QTreeWidgetItem) -> list[int]:
+        files = self.files()
+        return [
+            row for row in self._rows_for_becomes_target(node)
+            if row < len(files) and self._is_switch_file(files[row])
+        ]
+
+    def set_part(self, rows: list[int], part: str) -> None:
+        """Mark these Switch rows as Base, Update or DLC.
+
+        The guess from the filename is often wrong (a cart called "Party Pack",
+        a base whose name contains "set"). The folder is named after the file
+        marked Base, so correcting an XCI back to Base puts the NSP update and
+        DLC in that cart's folder instead of a second `.nsp` tree.
+        """
+        try:
+            label = ContentType(part).value
+        except ValueError:
+            return
+        if label not in (ContentType.BASE.value, ContentType.UPDATE.value, ContentType.DLC.value):
+            return
+        files = self.files()
+        parents: set[int] = set()
+        for row in rows:
+            node = files[row]
+            if not self._is_switch_file(node):
+                continue
+            options = dict(node.data(self.COL_FILE, _ROLE_OPTIONS) or {})
+            options["content_type"] = label
+            node.setData(self.COL_FILE, _ROLE_OPTIONS, options)
+            node.setText(self.COL_TYPE, label)
+            self._refresh_item(node)
+            parent = node.parent()
+            if parent is not None:
+                parents.add(id(parent))
+        for folder in self._all_folders():
+            if id(folder) in parents:
+                self._align_folder(folder)
+        self._reveal_part_column()
+        self.queue_changed.emit()
+
+    def _add_part_actions(self, menu: QMenu, row: int, rows: list[int]) -> bool:
+        current = self.files()[row].text(self.COL_TYPE)
+        for label, tip in (
+            (ContentType.BASE.value, "This is the file the game folder is named after."),
+            (ContentType.UPDATE.value, "Sits beside the base and keeps its own name."),
+            (ContentType.DLC.value, "Sits beside the base and keeps its own name."),
+        ):
+            action = QAction(label, self, checkable=True)
+            action.setChecked(current == label)
+            action.setToolTip(tip)
+            action.triggered.connect(
+                lambda _c=False, name=label, r=rows: self.set_part(r, name))
+            menu.addAction(action)
+        return True
+
     def set_platform(self, rows: list[int], platform: str) -> None:
         files = self.files()
         parents: set[int] = set()
@@ -1762,19 +1838,23 @@ class QueueTable(QTreeWidget):
     def _on_item_clicked(self, node: QTreeWidgetItem, column: int) -> None:
         if column not in self._CLICKABLE:
             return
-        rows = self._rows_for_becomes_target(node)
+        if column == self.COL_TYPE:
+            rows = self._part_rows(node)
+        else:
+            rows = self._rows_for_becomes_target(node)
+            if column != self.COL_PLATFORM:
+                rows = [r for r in rows if self.row_format(r) is not None]
         if not rows:
             return
-        if column != self.COL_PLATFORM:
-            rows = [r for r in rows if self.row_format(r) is not None]
-            if not rows:
-                return
         row = rows[0]
         menu = QMenu(self)
         menu.setToolTipsVisible(True)
-        filled = (self._add_platform_actions(menu, row, rows)
-                  if column == self.COL_PLATFORM
-                  else self._add_format_actions(menu, row, rows))
+        if column == self.COL_TYPE:
+            filled = self._add_part_actions(menu, row, rows)
+        elif column == self.COL_PLATFORM:
+            filled = self._add_platform_actions(menu, row, rows)
+        else:
+            filled = self._add_format_actions(menu, row, rows)
         if not filled:
             return
         rect = self.visualRect(self.indexFromItem(node, column))
@@ -1785,7 +1865,9 @@ class QueueTable(QTreeWidget):
         node = self.itemFromIndex(index) if index.isValid() else None
         clickable = False
         if node is not None and index.column() in self._CLICKABLE:
-            if self._is_file(node):
+            if index.column() == self.COL_TYPE:
+                clickable = bool(self._part_rows(node))
+            elif self._is_file(node):
                 clickable = (index.column() == self.COL_PLATFORM
                              or self._format_of(node) is not None)
             elif self._is_game_node(node):
@@ -1835,6 +1917,10 @@ class QueueTable(QTreeWidget):
 
         menu = QMenu(self)
         menu.setToolTipsVisible(True)
+
+        if self._is_switch_file(node):
+            part_menu = menu.addMenu("Part")
+            self._add_part_actions(part_menu, row, self._part_rows(node) or rows)
 
         platform_menu = menu.addMenu("Platform")
         self._add_platform_actions(platform_menu, row, rows)

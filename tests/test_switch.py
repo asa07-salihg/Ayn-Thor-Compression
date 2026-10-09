@@ -251,6 +251,16 @@ def test_a_title_id_beats_a_word_that_is_part_of_the_name():
     assert detect_content_type(passes) is ContentType.BASE
 
 
+def test_a_cartridge_whose_title_contains_pack_is_still_the_base():
+    """An XCI is the cart. "Party Pack" is the name, not a DLC marker, and
+    reading it as DLC left the cart in one folder and the NSP update in another."""
+    cart = Path("The Jackbox Party Pack 8.xci")
+    assert detect_content_type(cart) is ContentType.BASE
+    assert detect_content_type(Path("Game Update.xci")) is ContentType.UPDATE
+    assert detect_content_type(
+        Path("Game [DLC] [0100152000022000][v0].xci")) is ContentType.DLC
+
+
 def test_a_bracketed_marker_still_beats_the_title_id():
     """`[DLC]` is a statement about the file, not part of the name."""
     assert detect_content_type(

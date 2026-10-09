@@ -3,6 +3,17 @@
 Notable changes, newest first. Versions follow
 [semantic versioning](https://semver.org/).
 
+## 1.3.3
+
+- **Part is clickable.** Base, Update and DLC are guessed from the filename
+  and that guess is sometimes wrong. Click the Part cell (or the row menu)
+  to set it. The game folder follows the file you mark as Base.
+- **An XCI cart stays the base game.** A title like "Party Pack" was read as
+  DLC, and a cart with no title id did not join the NSP update that had one,
+  so the same game became two folders. The cart is Base unless its title id
+  or an explicit `[Update]` / `[DLC]` tag says otherwise, and it shares a
+  folder with the NSP update and DLC.
+
 ## 1.3.2
 
 Bug fixes. I went back over 1.3.1 and found these. Every one of them has a
