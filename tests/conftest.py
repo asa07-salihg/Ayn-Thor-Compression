@@ -8,6 +8,7 @@ server, and a stray import here would quietly undo that.
 from __future__ import annotations
 
 import struct
+import sys
 from pathlib import Path
 
 import pytest
@@ -50,6 +51,33 @@ def write_ncsd(path: Path, *, encrypted: bool) -> Path:
     struct.pack_into("<II", outer, NCSD_PARTITION_TABLE, partition_offset_units, 8)
     path.write_bytes(bytes(outer) + ncch_header(encrypted=encrypted))
     return path
+
+
+def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
+    """Exit with the test result before PySide shuts Qt down.
+
+    The UI file builds real windows. After pytest prints the summary, Linux
+    segfaults inside Qt while the interpreter frees those windows and the
+    SVG icons in the stylesheet. The pass or fail is already decided here.
+    """
+    if "PySide6.QtWidgets" not in sys.modules:
+        return
+    from PySide6.QtWidgets import QApplication
+
+    if QApplication.instance() is None:
+        return
+
+    import atexit
+    import os
+
+    code = int(exitstatus)
+
+    def _exit_with_test_result() -> None:
+        sys.stdout.flush()
+        sys.stderr.flush()
+        os._exit(code)
+
+    atexit.register(_exit_with_test_result)
 
 
 @pytest.fixture()

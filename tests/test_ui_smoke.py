@@ -48,6 +48,65 @@ from aynthor.core.settings import FormatSettings
 CONTROLS = (QComboBox, QCheckBox, QLineEdit, QSpinBox)
 
 
+def _stop_qt_threads() -> None:
+    import gc
+
+    from PySide6.QtCore import QThread
+    from shiboken6 import isValid
+
+    for obj in gc.get_objects():
+        if not isinstance(obj, QThread):
+            continue
+        try:
+            if isValid(obj) and obj.isRunning():
+                obj.quit()
+                obj.wait(2000)
+        except RuntimeError:
+            continue
+
+
+def _release_widgets(app: QApplication) -> None:
+    """Schedule every top-level window for deletion while QApplication exists.
+
+    shiboken.delete on a live window access-violates. deleteLater is Qt's
+    own order, and processEvents runs it before the interpreter shuts down.
+    """
+    from PySide6.QtCore import QCoreApplication, QEvent
+    from shiboken6 import isValid
+
+    if not isValid(app):
+        return
+    app.closeAllWindows()
+    app.processEvents()
+    for widget in list(app.topLevelWidgets()):
+        if isValid(widget):
+            widget.hide()
+            widget.deleteLater()
+    # processEvents does not flush DeferredDelete. Send it directly, or the
+    # window is still alive when the interpreter later destroys Qt.
+    QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+
+
+def _shutdown_qt(app: QApplication) -> None:
+    """Drop SVG icons and windows while Qt is still intact.
+
+    The stylesheet points at SVG files. Qt frees those icon engines during
+    interpreter shutdown, and on Linux that segfaults after the tests pass.
+    """
+    from PySide6.QtGui import QPixmapCache
+    from shiboken6 import isValid
+
+    from aynthor.ui import icons
+
+    if not isValid(app):
+        return
+    _stop_qt_threads()
+    app.setStyleSheet("")
+    QPixmapCache.clear()
+    icons._png.cache_clear()
+    _release_widgets(app)
+
+
 @pytest.fixture(scope="module")
 def app(tmp_path_factory) -> QApplication:
     """A Qt application whose saved settings go to a scratch directory.
@@ -72,7 +131,8 @@ def app(tmp_path_factory) -> QApplication:
 
     instance = QApplication.instance() or QApplication([])
     apply_theme(instance, Mode.DARK)
-    return instance
+    yield instance
+    _shutdown_qt(instance)
 
 
 @pytest.fixture(autouse=True)
@@ -1410,6 +1470,23 @@ def test_every_icon_draws_in_both_themes(app):
                 assert not icons.icon(name, "accentText").isNull(), name
     finally:
         apply_theme(app, Mode.DARK)
+
+
+def test_a_leftover_window_is_destroyed_while_qt_is_alive(app):
+    """A window still alive at process exit is freed after QApplication on Linux,
+    and that segfaults once pytest has already printed the passing summary."""
+    from PySide6.QtWidgets import QWidget
+    from shiboken6 import isValid
+
+    window = QWidget()
+    window.show()
+    app.processEvents()
+    assert window in app.topLevelWidgets()
+
+    _release_widgets(app)
+
+    assert not isValid(window)
+    assert app.topLevelWidgets() == []
 
 
 def test_the_icon_cache_keeps_png_bytes(app):
