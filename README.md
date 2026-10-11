@@ -4,39 +4,63 @@
 
 <h1 align="center">Ayn Thor Compression</h1>
 
-[![CI](https://github.com/asa07-salihg/Ayn-Thor-Compression/actions/workflows/ci.yml/badge.svg)](https://github.com/asa07-salihg/Ayn-Thor-Compression/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/github/v/release/asa07-salihg/Ayn-Thor-Compression)](https://github.com/asa07-salihg/Ayn-Thor-Compression/releases/latest)
+<p align="center">
+<a href="https://github.com/asa07-salihg/Ayn-Thor-Compression/actions/workflows/ci.yml"><img src="https://github.com/asa07-salihg/Ayn-Thor-Compression/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+<a href="https://github.com/asa07-salihg/Ayn-Thor-Compression/releases/latest"><img src="https://img.shields.io/github/v/release/asa07-salihg/Ayn-Thor-Compression" alt="Release"></a>
+</p>
 
+<p align="center">
 Ayn Thor Compression is a Windows app for the ROM compression tools emulators
 use. Each system wants its own format and its own program: CHD from chdman,
 RVZ from DolphinTool, NSZ from nsz. 3DS ROMs have to be decrypted before
 compression helps. Add the files to one queue and the app runs the tool for
 each file.
+</p>
 
+<p align="center">
 Each format comes from the project that defined it, with the flags that
 emulator needs.
+</p>
 
-The default formats come from filling an [Ayn Thor](https://www.ayntec.com/)
+<p align="center">
+The default formats come from filling an <a href="https://www.ayntec.com/">Ayn Thor</a>
 handheld. They are the same on every model in the range, and you can change
-any of them under **Settings > Platform presets**.
+any of them under <strong>Settings &gt; Platform presets</strong>.
+</p>
 
-[Download](#download) · [Formats](#supported-formats) · [Legal](#legal) · [From source](#running-from-source) · [Changelog](CHANGELOG.md)
+<p align="center">
+<a href="#download">Download</a> ·
+<a href="#supported-formats">Formats</a> ·
+<a href="#legal">Legal</a> ·
+<a href="#running-from-source">From source</a> ·
+<a href="CHANGELOG.md">Changelog</a>
+</p>
 
-![Files queued, each with the format its platform needs](docs/images/ui-dark.png)
+<p align="center">
+<img src="docs/images/ui-dark.png" alt="Files queued, each with the format its platform needs">
+</p>
 
-The format for each file is set when you add it. Click the **Becomes** cell to
+<p align="center">
+The format for each file is set when you add it. Click the <strong>Becomes</strong> cell to
 change it, or right-click the row for that list and the other row actions.
 Drop a folder in and press Start.
+</p>
 
+<p align="center">
 On first launch, the setup guide installs the converter programs, asks for
 your ROMs folder (SD card, USB drive, or this PC), and looks for Switch keys.
 Press Start and the app lists problems it can already see, with a button for
-each one. Click **Failed** on a row to read what went wrong.
+each one. Click <strong>Failed</strong> on a row to read what went wrong.
+</p>
 
+<p align="center">
 Light and dark follow the Windows setting, and the accent colour comes from
 yours:
+</p>
 
-![The same window in the light theme](docs/images/ui-light.png)
+<p align="center">
+<img src="docs/images/ui-light.png" alt="The same window in the light theme">
+</p>
 
 ## Legal
 
@@ -99,7 +123,9 @@ One settings window: a General page, a **Platform presets** page, and a page per
 format. You can use the app with the defaults. Everything except General is
 under **Advanced**.
 
-![Platform presets](docs/images/ui-presets.png)
+<p align="center">
+<img src="docs/images/ui-presets.png" alt="Platform presets">
+</p>
 
 **Platform presets** is the table auto-detection uses. A file in `ROMs/ps2`
 becomes a zlib CHD with hunk 2048. A file in `ROMs/gc` becomes a level 5 zstd
