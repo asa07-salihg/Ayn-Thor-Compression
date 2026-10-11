@@ -7,6 +7,7 @@ server, and a stray import here would quietly undo that.
 
 from __future__ import annotations
 
+import os
 import struct
 import sys
 from pathlib import Path
@@ -54,21 +55,17 @@ def write_ncsd(path: Path, *, encrypted: bool) -> Path:
 
 
 def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
-    """Exit with the test result before PySide shuts Qt down.
+    """Exit with the test result before Qt shuts down.
 
-    The UI file builds real windows. After pytest prints the summary, Linux
-    segfaults inside Qt while the interpreter frees those windows and the
-    SVG icons in the stylesheet. The pass or fail is already decided here.
+    The UI file sets AYNTHOR_QT_TESTS. After pytest prints the summary, Linux
+    segfaults while the interpreter frees those windows. The pass or fail is
+    already decided here. This file does not import Qt: the other CI jobs
+    run with PySide6 not installed.
     """
-    if "PySide6.QtWidgets" not in sys.modules:
-        return
-    from PySide6.QtWidgets import QApplication
-
-    if QApplication.instance() is None:
+    if os.environ.get("AYNTHOR_QT_TESTS") != "1":
         return
 
     import atexit
-    import os
 
     code = int(exitstatus)
 

@@ -29,6 +29,10 @@ pytest.importorskip("PySide6", reason="UI smoke tests need PySide6")
 
 # Must be set before the first QApplication, and this module creates one.
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+# Tells tests/conftest.py to leave before Qt's shutdown. Only this file may
+# import PySide6; the hook itself stays in conftest so the other jobs, which
+# do not install PySide6, never see an import.
+os.environ["AYNTHOR_QT_TESTS"] = "1"
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (

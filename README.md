@@ -1,4 +1,4 @@
-<img src="docs/images/logo.png" alt="" width="112" align="left">
+<img src="docs/images/logo.png" alt="" width="112" align="">
 
 # Ayn Thor Compression
 
