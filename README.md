@@ -1,6 +1,8 @@
-<img src="docs/images/logo.png" alt="" width="112" align="">
+<p align="center">
+<img src="docs/images/logo.png" alt="" width="112">
+</p>
 
-# Ayn Thor Compression
+<h1 align="center">Ayn Thor Compression</h1>
 
 [![CI](https://github.com/asa07-salihg/Ayn-Thor-Compression/actions/workflows/ci.yml/badge.svg)](https://github.com/asa07-salihg/Ayn-Thor-Compression/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/asa07-salihg/Ayn-Thor-Compression)](https://github.com/asa07-salihg/Ayn-Thor-Compression/releases/latest)
