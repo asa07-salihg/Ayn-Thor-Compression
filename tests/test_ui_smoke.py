@@ -1412,6 +1412,19 @@ def test_every_icon_draws_in_both_themes(app):
         apply_theme(app, Mode.DARK)
 
 
+def test_the_icon_cache_keeps_png_bytes(app):
+    """The cache lives until the interpreter exits, after QApplication is gone.
+
+    A cached pixmap or image is freed at that point, and freeing one then
+    segfaults on Linux after these tests have already passed.
+    """
+    from aynthor.ui import icons
+
+    cached = icons._png(icons._svg("play"), "#111111", 16)
+    assert isinstance(cached, bytes)
+    assert cached.startswith(b"\x89PNG")
+
+
 def test_the_logo_draws_large_and_small(app):
     from aynthor.ui import icons
     from aynthor.ui.theme import app_icon

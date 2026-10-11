@@ -37,17 +37,31 @@ _ICON_SIZES = (16, 20, 24, 32, 40, 48)
 _SMALL_LOGO_LIMIT = 40
 
 
+# PNG bytes, never a Qt object. This cache lives until the interpreter exits,
+# after the QApplication is gone, and freeing a QPixmap or QImage then
+# segfaults on Linux. The pixmap is built from these bytes only while the
+# application still exists.
 @lru_cache(maxsize=512)
-def _render(path: str, colour: str, size: int) -> QPixmap:
+def _png(path: str, colour: str, size: int) -> bytes:
     data = Path(path).read_bytes()
     if colour:
         data = data.replace(b"currentColor", colour.encode("ascii"))
-    buffer = QBuffer()
-    buffer.setData(QByteArray(data))
-    buffer.open(QIODevice.OpenModeFlag.ReadOnly)
-    reader = QImageReader(buffer, QByteArray(b"svg"))
+    source = QBuffer()
+    source.setData(QByteArray(data))
+    source.open(QIODevice.OpenModeFlag.ReadOnly)
+    reader = QImageReader(source, QByteArray(b"svg"))
     reader.setScaledSize(QSize(size, size))
-    return QPixmap.fromImage(reader.read())
+    image = reader.read()
+    out = QBuffer()
+    out.open(QIODevice.OpenModeFlag.WriteOnly)
+    image.save(out, "PNG")
+    return bytes(out.data())
+
+
+def _render(path: str, colour: str, size: int) -> QPixmap:
+    pixmap = QPixmap()
+    pixmap.loadFromData(_png(path, colour, size), "PNG")
+    return pixmap
 
 
 def names() -> list[str]:

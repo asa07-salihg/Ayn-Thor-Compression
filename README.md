@@ -5,36 +5,31 @@
 [![CI](https://github.com/asa07-salihg/Ayn-Thor-Compression/actions/workflows/ci.yml/badge.svg)](https://github.com/asa07-salihg/Ayn-Thor-Compression/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/asa07-salihg/Ayn-Thor-Compression)](https://github.com/asa07-salihg/Ayn-Thor-Compression/releases/latest)
 
-Ayn Thor Compression is a Windows desktop front end for the ROM compression
-tools that emulators expect. Every system wants a different format and a
-different program to produce it: CHD comes from chdman, RVZ from DolphinTool,
-NSZ from nsz, and the 3DS needs its ROMs decrypted before compression saves
-anything at all. This app puts one queue in front of all of them, picks the
-format each file should become, and runs the batch.
+Ayn Thor Compression is a Windows app for the ROM compression tools emulators
+use. Each system wants its own format and its own program: CHD from chdman,
+RVZ from DolphinTool, NSZ from nsz. 3DS ROMs have to be decrypted before
+compression helps. Add the files to one queue and the app runs the tool for
+each file.
 
-It converts nothing itself. Each format is handled by the project that defined
-it, driven with the flags that particular emulator actually needs.
+Each format comes from the project that defined it, with the flags that
+emulator needs.
 
-Built for filling an [Ayn Thor](https://www.ayntec.com/) handheld, which is
-where the per-platform defaults come from, and it works the same on every model
-in the range. Nothing in it is tied to one device: the defaults are the formats
-and flags each emulator needs, and every one of them is visible and editable
-under **Settings > Platform presets**.
+The default formats come from filling an [Ayn Thor](https://www.ayntec.com/)
+handheld. They are the same on every model in the range, and you can change
+any of them under **Settings > Platform presets**.
 
 [Download](#download) · [Formats](#supported-formats) · [Legal](#legal) · [From source](#running-from-source) · [Changelog](CHANGELOG.md)
 
-![A card's worth of files queued, each with the format its platform needs](docs/images/ui-dark.png)
+![Files queued, each with the format its platform needs](docs/images/ui-dark.png)
 
-The format for each file is worked out when it is added. Click the **Becomes**
-cell to change it, or right-click for the same list plus everything else a row
-can do. There is no mode to be in and nothing to select first: drop a folder in
-and press Start.
+The format for each file is set when you add it. Click the **Becomes** cell to
+change it, or right-click the row for that list and the other row actions.
+Drop a folder in and press Start.
 
-The first time it opens, a short setup guide installs the converter programs,
-asks for your ROMs folder (on an SD card, a USB drive or this computer), and
-looks for Switch keys. Press Start and anything that would fail is listed
-first, with a button that fixes it. A row that fails anyway explains itself:
-click **Failed**.
+On first launch, the setup guide installs the converter programs, asks for
+your ROMs folder (SD card, USB drive, or this PC), and looks for Switch keys.
+Press Start and the app lists problems it can already see, with a button for
+each one. Click **Failed** on a row to read what went wrong.
 
 Light and dark follow the Windows setting, and the accent colour comes from
 yours:
@@ -87,32 +82,27 @@ Two steps prepare a file rather than shrink it:
 | **Decrypt 3DS** | `.cia`, `.3ds`, `.cci` | A cart dumped from a console is encrypted, and encrypted data does not compress. This has to run before ZCCI |
 | **NDS trim** | `.nds` | melonDS will not read an archive, so trimming the unused tail of the cart is the only saving available |
 
-Every format that can be undone can be undone here, and a file that is already
-compressed is queued that way when you add it: drop a `.chd` in and the row
-reads **CHD (decompress)**, writing the cue/bin back out. The same goes for
-`.rvz`, `.cso`, `.zso`, `.nsz`, `.xcz` and the ZCCI containers, which come back
-byte for byte. Cartridge `.7z` and `.zip` files are left alone, because that is
-the form RetroArch and MAME want them in; click **Becomes** and pick *Unzip
-instead of convert* for the odd one you do want expanded. WUA is the exception
-either way, because nothing reverses it.
+You can expand a compressed file again. Drop a `.chd` in and the row reads
+**CHD (decompress)**, which writes the cue/bin back out. The same applies to
+`.rvz`, `.cso`, `.zso`, `.nsz`, `.xcz`, and ZCCI, which come back byte for
+byte. Cartridge `.7z` and `.zip` files stay as they are, because RetroArch and
+MAME read them that way. Click **Becomes** and pick *Unzip instead of convert*
+when you want one of those expanded. WUA cannot be reversed.
 
-N64 is deliberately left alone. An uncompressed `.z64` is the most compatible
-form and the emulators that matter do not read anything smaller.
+N64 stays an uncompressed `.z64`. That is the file those emulators read.
 
 ## Settings
 
 One settings window: a General page, a **Platform presets** page, and a page per
-format. Nothing in it has to be touched to use the app, and everything except
-General sits under **Advanced**.
+format. You can use the app with the defaults. Everything except General is
+under **Advanced**.
 
 ![Platform presets](docs/images/ui-presets.png)
 
-**Platform presets** is the table auto-detection runs on. It is what decides
-that a file in `ROMs/ps2` becomes a zlib CHD with hunk 2048 while one in
-`ROMs/gc` becomes a level 5 zstd RVZ. Every row is editable, rows you have
-changed are marked with an asterisk, and any of them can be put back, which
-matters because several of the defaults exist to work around one specific
-emulator.
+**Platform presets** is the table auto-detection uses. A file in `ROMs/ps2`
+becomes a zlib CHD with hunk 2048. A file in `ROMs/gc` becomes a level 5 zstd
+RVZ. Every row is editable. Rows you have changed are marked with an asterisk,
+and any row can be put back. Several defaults exist for one specific emulator.
 
 Per-format pages hold that tool's own flags. Saving applies only the pages you
 edited to files already queued, so changing an RVZ setting will not overwrite
@@ -124,10 +114,10 @@ the codec a PS2 row was given for NetherSX2.
 there is one it shows the version and the release notes, and can replace this
 executable with it.
 
-The download is verified against the `SHA256SUMS.txt` published with that
-release before anything is replaced, and a release without that file is
-reported rather than installed. Nothing is checked on a timer and nothing is
-installed without a button press.
+The download is checked against the `SHA256SUMS.txt` published with that
+release before the exe is replaced. A release without that file is reported
+and left uninstalled. The app checks only when you ask, and it installs only
+after you press the button.
 
 Because releases are plain GitHub releases with a stable asset name
 (`AynThorCompression.exe`), an external release tracker can follow this project
@@ -144,9 +134,9 @@ python scripts/fetch_tools.py
 
 Each download is checked against a SHA-256 recorded in
 [`manifest.py`](src/aynthor/core/tools/manifest.py) before it is written to
-disk, and versions are pinned, so upgrading a tool is a deliberate change with a
-new checksum rather than something that happens quietly on your machine. One
-entry cannot be verified, and the Tools window says which and why.
+disk. Versions are pinned, so a tool changes only when that checksum changes
+in the project. One entry cannot be verified, and the Tools window says which
+and why.
 
 [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) lists every tool, its version,
 its licence, and how to re-derive the hashes yourself.
@@ -209,10 +199,8 @@ pip install -e ".[build]"
 python packaging/build_exe.py
 ```
 
-The result is `dist/AynThorCompression.exe`. It is a fraction of the size a
-default PySide6 build would be: only the Qt modules the app imports are
-packaged, and the Qt DLLs behind the ones it does not are pruned by name after
-dependency analysis pulls them in.
+The result is `dist/AynThorCompression.exe`. The build keeps the Qt modules
+the app imports and drops the Qt DLLs it does not use.
 [The spec](packaging/AynThorCompression.spec) explains each pass.
 
 Pushing a `v1.2.3` tag makes CI do the same and attach the exe and its checksum
@@ -228,10 +216,8 @@ page opens from **More > What's new**.
 
 ## How it is put together
 
-`src/aynthor/core/` is the engine and imports Qt nowhere, which is what lets the
-test suite run without a display server. `src/aynthor/ui/` is the window. Every
-module starts with why it exists, what calls it, and a link to the
-specification or tool documentation it is based on.
+`src/aynthor/core/` is the engine. It does not import Qt, so the tests run
+without a display. `src/aynthor/ui/` is the window.
 
 ## Contributing
 
@@ -266,8 +252,8 @@ Licences are listed in [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
 
 ## Support
 
-The app is free and always will be. If it saved you a card's worth of space and
-you feel like it, [buy me a coffee](https://buymeacoffee.com/asa07salihg).
+The app is free. If you want to support the work,
+[buy me a coffee](https://buymeacoffee.com/asa07salihg).
 
 ## License
 
