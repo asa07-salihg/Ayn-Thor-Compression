@@ -18,9 +18,10 @@ Reference
 
 from __future__ import annotations
 
-from aynthor.core.converters.base import BaseConverter
+from aynthor.core.converters.base import BaseConverter, missing_tool
 from aynthor.core.ctr import decrypt
 from aynthor.core.models import CompressionFormat, ConversionJob
+from aynthor.core.system import tools_dir
 
 # .3ds and .cci are the same NCSD container under two names.
 _CART_EXTENSIONS = {".3ds", ".cci"}
@@ -36,8 +37,7 @@ class Decrypt3dsConverter(BaseConverter):
 
         missing = decrypt.missing_tools()
         if missing:
-            return False, ("Missing 3DS decryptor tools: "
-                           f"{', '.join(missing)}. Install them from Tools.")
+            return False, missing_tool(f"The 3DS Decryptor ({', '.join(missing)})", tools_dir())
 
         try:
             if job.input_path.suffix.lower() in _CART_EXTENSIONS:

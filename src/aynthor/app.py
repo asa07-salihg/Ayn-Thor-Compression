@@ -44,4 +44,5 @@ def run() -> int:
 
     window = MainWindow()
     window.show()
+    window.maybe_show_welcome()
     return app.exec()

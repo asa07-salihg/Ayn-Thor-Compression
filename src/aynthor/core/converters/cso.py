@@ -17,7 +17,7 @@ Reference
 
 from __future__ import annotations
 
-from aynthor.core.converters.base import BaseConverter, failure, is_decompress
+from aynthor.core.converters.base import BaseConverter, failure, is_decompress, missing_tool
 from aynthor.core.models import CompressionFormat, ConversionJob
 from aynthor.core.system import run_tool, tool_path
 
@@ -32,7 +32,7 @@ class MaxcsoConverter(BaseConverter):
 
         maxcso = tool_path("maxcso")
         if not maxcso.is_file():
-            return False, f"maxcso not found in {maxcso.parent}. Install it from Tools."
+            return False, missing_tool("maxcso", maxcso.parent)
 
         opts = job.options
         args: list[str] = []

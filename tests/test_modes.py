@@ -22,7 +22,7 @@ def test_seven_zip_reverse_is_unzip():
 
 
 def test_archive_member_has_no_separate_unzip_action():
-    """RAR is already peeked into an NSP row — Move or convert, not Unzip."""
+    """RAR is already peeked into an NSP row, so it offers Move or convert, not Unzip."""
     from aynthor.core.modes import supports_reverse
 
     assert supports_reverse(CompressionFormat.NSZ, from_archive=True) is False

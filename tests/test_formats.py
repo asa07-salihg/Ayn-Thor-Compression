@@ -34,6 +34,14 @@ def test_every_entry_explains_itself():
         assert info.extensions, f"{info.label} claims no extensions"
 
 
+def test_every_entry_has_a_sentence_a_beginner_can_read():
+    """`plain` is the Becomes tooltip, read by people who have never heard of CHD."""
+    for info in FORMAT_CATALOG:
+        assert info.plain, f"{info.label} has no plain description"
+        assert info.plain.endswith("."), info.plain
+        assert "\u2014" not in info.plain and "\u2013" not in info.plain, info.plain
+
+
 def test_decrypt_3ds_is_last_so_auto_detect_prefers_compression():
     # A .cia is far more often headed for compression than for decryption, and
     # detect_format returns the first entry that claims the extension.

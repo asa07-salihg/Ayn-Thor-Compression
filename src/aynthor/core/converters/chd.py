@@ -18,7 +18,7 @@ Reference
 
 from __future__ import annotations
 
-from aynthor.core.converters.base import BaseConverter, failure, is_decompress
+from aynthor.core.converters.base import BaseConverter, failure, is_decompress, missing_tool
 from aynthor.core.models import CompressionFormat, ConversionJob
 from aynthor.core.system import run_tool, tool_path
 
@@ -50,7 +50,7 @@ class ChdmanConverter(BaseConverter):
 
         chdman = tool_path("chdman")
         if not chdman.is_file():
-            return False, f"chdman not found in {chdman.parent}. Install it from Tools."
+            return False, missing_tool("chdman", chdman.parent)
 
         if is_decompress(job):
             return self._extract(chdman, job)

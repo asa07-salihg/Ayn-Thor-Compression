@@ -111,7 +111,7 @@ A file that expands to more than its own header says it should is stopped and
 its partial output removed, rather than filling the disk first and comparing
 afterwards. Two operations modify files in
 place. **NDS trim** rewrites the cart image, copying it first when the output
-path differs from the input. **Delete the source file** removes the input after
+path differs from the input. **Delete the original after it converts** removes the input after
 a successful conversion: it is off by default, never remembered between
 sessions, asks for confirmation before a batch, and refuses unless the converter
 reported success and the output exists, differs from the input and is not empty.

@@ -16,7 +16,7 @@ Reference
 
 from __future__ import annotations
 
-from aynthor.core.converters.base import BaseConverter, failure, is_decompress
+from aynthor.core.converters.base import BaseConverter, failure, is_decompress, missing_tool
 from aynthor.core.models import CompressionFormat, ConversionJob
 from aynthor.core.system import run_tool, tool_path
 
@@ -36,8 +36,8 @@ class DolphinConverter(BaseConverter):
         dolphin = tool_path("DolphinTool")
         if not dolphin.is_file():
             return False, (
-                f"DolphinTool not found in {dolphin.parent}. Install it from Tools, "
-                "or point Tools at the copy inside your Dolphin install."
+                missing_tool("DolphinTool", dolphin.parent)
+                + " Tools can also copy it from a Dolphin install you already have."
             )
 
         opts = job.options

@@ -37,6 +37,7 @@ class FormatInfo:
     tool: str
     reason: str = ""  # why this format is the right target for that platform
     notes: str = ""   # shown above the format's options
+    plain: str = ""   # one sentence for someone who has never heard of the format
     # Extensions that mean the file has already been through this format, so
     # adding one should queue an expand rather than a compress. Empty where the
     # compressed form is the form the emulator wants to keep (7z and ZIP
@@ -56,6 +57,7 @@ FORMAT_CATALOG: tuple[FormatInfo, ...] = (
         reason="One file instead of a cue/bin pair, and every mainstream disc "
                "emulator reads it directly.",
         notes="PS2 on NetherSX2 needs zlib and hunk 2048; it cannot read zstd CHDs.",
+        plain="A compressed disc image. Most disc emulators open it directly.",
     ),
     FormatInfo(
         CompressionFormat.RVZ,
@@ -67,6 +69,7 @@ FORMAT_CATALOG: tuple[FormatInfo, ...] = (
         reason="Dolphin's own format. It drops the junk padding Nintendo discs "
                "are full of, which GCZ and WBFS keep.",
         notes="Defaults are Dolphin's: zstd level 5, block size 131072.",
+        plain="Dolphin's compressed format for GameCube and Wii discs.",
     ),
     FormatInfo(
         CompressionFormat.CSO,
@@ -78,6 +81,7 @@ FORMAT_CATALOG: tuple[FormatInfo, ...] = (
         reason="Smaller than CHD on PSP titles, and PPSSPP reads it natively. "
                "Pick CHD instead if you want one format across all disc systems.",
         notes="ZSO trades a little size for much faster decompression on weak hardware.",
+        plain="A compressed PSP disc that PPSSPP opens directly.",
     ),
     FormatInfo(
         CompressionFormat.Z3DS,
@@ -91,6 +95,7 @@ FORMAT_CATALOG: tuple[FormatInfo, ...] = (
                "quarter off a decrypted cart.",
         notes="The ROM must be decrypted first: encrypted bytes do not compress. "
               "Open restores the original file byte for byte.",
+        plain="A compressed 3DS game that Azahar opens directly.",
     ),
     FormatInfo(
         CompressionFormat.NDS_TRIM,
@@ -102,6 +107,7 @@ FORMAT_CATALOG: tuple[FormatInfo, ...] = (
                "the cart is the only saving available.",
         notes="Optional. DS carts are small to begin with; this is worth doing "
               "only on the handful of titles with large padding.",
+        plain="Cuts the unused space off the end of a DS game.",
     ),
     FormatInfo(
         CompressionFormat.NSZ,
@@ -114,6 +120,7 @@ FORMAT_CATALOG: tuple[FormatInfo, ...] = (
                "signature intact, so installers still accept the file.",
         notes="Needs your own prod.keys. Base game, update and DLC are separate "
               "files and are compressed separately.",
+        plain="A compressed Switch file that installs just like the original.",
     ),
     FormatInfo(
         CompressionFormat.SEVEN_ZIP,
@@ -127,6 +134,7 @@ FORMAT_CATALOG: tuple[FormatInfo, ...] = (
                "7z transparently.",
         notes="Use ZIP for FBNeo and MAME: those cores expect a zipped romset and "
               "will not look inside a 7z.",
+        plain="Packs the game into an archive that RetroArch opens directly.",
     ),
     FormatInfo(
         CompressionFormat.WUA,
@@ -138,6 +146,7 @@ FORMAT_CATALOG: tuple[FormatInfo, ...] = (
                "Cemu mounts as one title.",
         notes="A .wud or .wux disc image needs its disc key. There is no reverse "
               "direction: Cemu reads WUA, nothing converts back.",
+        plain="Packs a Wii U game, its update and its DLC into one file for Cemu.",
     ),
     # Deliberately last. Auto-detect walks this catalogue in order and a .cia or
     # .3ds is far more often headed for compression than for decryption, so ZCCI
@@ -152,6 +161,7 @@ FORMAT_CATALOG: tuple[FormatInfo, ...] = (
                "on the fly, compressors cannot -- so this has to happen first.",
         notes="Handles game, update, DLC and demo CIAs plus .3ds and .cci carts. "
               "DSiWare (TWL) titles are not supported.",
+        plain="Removes the encryption from a 3DS game so it can be compressed.",
     ),
 )
 

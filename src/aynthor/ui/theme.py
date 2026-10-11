@@ -202,6 +202,10 @@ QLabel[role="second"] {{ color: {textSecond}; }}
 QLabel[role="third"] {{ color: {textThird}; font-size: 13px; }}
 QLabel[role="warn"] {{ color: {warn}; }}
 QLabel[role="drop"] {{ font-size: 17px; color: {textSecond}; }}
+QLabel[role="hero"] {{ font-family: {display}; font-size: 24px; font-weight: 600; }}
+QLabel[role="step"] {{
+    background: {subtleHover}; color: {text}; border-radius: 11px;
+    font-size: 13px; font-weight: 600; }}
 /* The per-format panels set this by object name, from before roles existed. */
 QLabel#hintLabel {{ color: {textSecond}; font-size: 13px; }}
 
@@ -290,6 +294,16 @@ QCheckBox::indicator:checked {{ background: {accent}; border-color: {accent};
                                 image: url("{check}"); }}
 QCheckBox:disabled {{ color: {textThird}; }}
 
+QRadioButton {{ spacing: 8px; }}
+QRadioButton::indicator {{
+    width: 14px; height: 14px; border: 1px solid {strokeStrong};
+    border-radius: 8px; background: {control}; }}
+QRadioButton::indicator:hover {{ background: {controlHover}; }}
+QRadioButton::indicator:checked {{
+    width: 6px; height: 6px; border: 5px solid {accent};
+    border-radius: 8px; background: {control}; }}
+QRadioButton:disabled {{ color: {textThird}; }}
+
 /* ---- table ------------------------------------------------------------ */
 QTableView {{
     background: {card};
@@ -373,6 +387,23 @@ def _shift(hex_color: str, amount: int) -> str:
     ).name()
 
 
+def _accent_tokens(accent: str, dark: bool) -> dict[str, str]:
+    # Fluent's accent button gets lighter on hover and darker when pressed, in
+    # both themes; the direction of "lighter" is what flips.
+    return {
+        "accent": accent,
+        "accentText": _text_on(accent),
+        "accentHover": _shift(accent, 14 if dark else 18),
+        "accentPress": _shift(accent, -18 if dark else -22),
+        "accentDeep": _shift(accent, -34),
+    }
+
+
+# Until a theme is applied, Windows' own default accent stands in, so a widget
+# built first (an icon tinted in the accent colour) does not raise.
+_tokens.update(_accent_tokens(_DEFAULT_ACCENT_DARK, True))
+
+
 def build_stylesheet(tokens: dict[str, str]) -> str:
     return _QSS.format(
         font=FONT, display=DISPLAY_FONT, mono=MONO,
@@ -432,13 +463,7 @@ def apply_theme(app: QApplication, mode: Mode = Mode.SYSTEM) -> None:
     accent = accent_dark if _is_dark else accent_light
 
     _tokens = dict(_DARK if _is_dark else _LIGHT)
-    _tokens["accent"] = accent
-    _tokens["accentText"] = _text_on(accent)
-    # Fluent's accent button gets lighter on hover and darker when pressed, in
-    # both themes; the direction of "lighter" is what flips.
-    _tokens["accentHover"] = _shift(accent, 14 if _is_dark else 18)
-    _tokens["accentPress"] = _shift(accent, -18 if _is_dark else -22)
-    _tokens["accentDeep"] = _shift(accent, -34)
+    _tokens.update(_accent_tokens(accent, _is_dark))
 
     app.setStyle("Fusion")
     app.setPalette(_palette(_tokens))

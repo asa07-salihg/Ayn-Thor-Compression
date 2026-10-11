@@ -21,7 +21,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from aynthor.core.converters.base import BaseConverter, failure, is_decompress
+from aynthor.core.converters.base import BaseConverter, failure, is_decompress, missing_tool
 from aynthor.core.models import CompressionFormat, ConversionJob
 from aynthor.core.system import run_tool, tool_path
 
@@ -42,7 +42,7 @@ class WuaConverter(BaseConverter):
 
         converto = tool_path("rom-converto")
         if not converto.is_file():
-            return False, f"rom-converto not found in {converto.parent}. Install it from Tools."
+            return False, missing_tool("rom-converto", converto.parent)
 
         opts = job.options
         args = ["wup", "compress", "-o", str(job.output_path)]

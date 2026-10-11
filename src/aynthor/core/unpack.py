@@ -41,7 +41,7 @@ from contextlib import contextmanager, suppress
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
-from aynthor.core.converters.base import parse_progress
+from aynthor.core.converters.base import missing_tool, parse_progress
 from aynthor.core.formats import known_extensions
 from aynthor.core.system import run_tool, tool_path
 
@@ -181,7 +181,7 @@ def rom_files(files: Iterable[Path]) -> list[Path]:
 
     Why
         Add folder took every extension the app knows, so the standard
-        PlayStation dump — one `.cue` beside `Game (Track 01..03).bin` — came
+        PlayStation dump (one `.cue` beside `Game (Track 01..03).bin`) came
         in as four rows. Three of them ran `chdman createcd` on a raw track,
         and all four wanted to write `Game.chd`: whichever finished last won
         and the other three were destroyed on the way. `rom_members` has had
@@ -321,7 +321,7 @@ def extract_member_to(
     destination: Path,
     on_progress: Callable[[int], None] | None = None,
 ) -> None:
-    """Extract one member straight to `destination` — no sibling unpack folder.
+    """Extract one member straight to `destination`, with no sibling unpack folder.
 
     Move used to unpack the whole RAR into `.aynthor-unpack-*` next to the
     card, then copy the NSP into the game folder. That doubled both time and
@@ -567,7 +567,7 @@ def _extract_zip(archive: Path, into: Path, total: int,
 def _list_7z(archive: Path, tool: Path | None = None) -> list[Member]:
     seven = tool if tool is not None else tool_path("7za")
     if not seven.is_file():
-        raise UnpackError("7za is not installed.")
+        raise UnpackError(missing_tool("7-Zip (7za)", seven.parent))
     result = run_tool(seven, ["l", "-slt", "-ba", "-scsUTF-8", str(archive)])
     if result.returncode > 1:
         raise UnpackError((result.stderr or result.stdout or "7za failed").strip())
@@ -615,7 +615,7 @@ def _extract_7z(
 ) -> None:
     seven = tool if tool is not None else tool_path("7za")
     if not seven.is_file():
-        raise UnpackError("7za is not installed. Install it from Tools.")
+        raise UnpackError(missing_tool("7-Zip (7za)", seven.parent))
 
     def emit(line: str) -> None:
         if on_progress is not None and (pct := parse_progress(line)) is not None:

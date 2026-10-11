@@ -51,7 +51,7 @@ def test_dropping_onto_a_folder_renames_the_primary(tmp_path: Path):
 
 
 def test_dropping_an_update_keeps_its_filename(tmp_path: Path):
-    """Extras keep the folder they were dropped on — even when they become .nsz."""
+    """Extras keep the folder they were dropped on, even when they become .nsz."""
     source = tmp_path / "sxs-mk8u_v1376256.nsp"
     item = QueueItem(
         path=source, format=CompressionFormat.NSZ, mode=ConversionMode.COMPRESS,

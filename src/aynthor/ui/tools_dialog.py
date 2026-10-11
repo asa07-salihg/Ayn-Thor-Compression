@@ -19,11 +19,15 @@ Why
     release of this app, after someone has read the upstream changelog for
     flag changes.
 
-    The Installed column therefore has three states, not two. A tool can be
+    The Status column therefore has three states, not two. A tool can be
     present and still not be the one this release pins, which is what happens
     to everyone who installed a tool before the pin moved. Those rows say
-    **outdated** and the button replaces them, so a pin bumped in a release
-    reaches the machine rather than sitting in a changelog.
+    **Needs update** and the button replaces them, so a pin bumped in a
+    release reaches the machine rather than sitting in a changelog.
+
+    Versions, licences and the update check sit behind "Show details". They
+    matter to someone checking where a binary came from, and only crowd the
+    window for someone who just wants their games converted.
 
     DolphinTool is offered two ways. Dolphin publishes no checksums for its
     Windows builds, so if the user already has Dolphin, copying the exe they
@@ -46,6 +50,7 @@ from typing import ClassVar
 from PySide6.QtCore import Qt, QThread, QUrl, Signal
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
+    QCheckBox,
     QDialog,
     QDialogButtonBox,
     QFileDialog,
@@ -67,8 +72,23 @@ from aynthor.ui import theme
 
 _ROLE_KEY = Qt.ItemDataRole.UserRole
 
+# What each program is for, in the words of someone filling a card.
+_USED_FOR = {
+    "chdman": "PlayStation, PS2, PSP, Dreamcast and other disc games",
+    "DolphinTool": "GameCube and Wii games",
+    "maxcso": "PSP games",
+    "7z": "Cartridge and arcade games, and opening .7z downloads",
+    "ndstrim": "Nintendo DS games",
+    "rom-converto": "Nintendo 3DS and Wii U games",
+    "3ds-decryptor": "Getting Nintendo 3DS games ready to compress",
+    "z3ds_compress": "Nintendo 3DS games",
+    "nsz": "Nintendo Switch games",
+}
 
-class _InstallWorker(QThread):
+
+class InstallWorker(QThread):
+    """Installs every missing or outdated program off the UI thread."""
+
     log = Signal(str)
     done = Signal(list)
 
@@ -88,6 +108,8 @@ class _VersionWorker(QThread):
 class ToolsDialog(QDialog):
     COL_TOOL, COL_STATUS, COL_PINNED, COL_LATEST, COL_FORMATS, COL_LICENCE = range(6)
 
+    _DETAIL_COLUMNS = (COL_PINNED, COL_LATEST, COL_LICENCE)
+
     _STATUS_TEXT: ClassVar[dict[Status, str]] = {
         Status.CURRENT: "latest",
         Status.BEHIND: "newer available",
@@ -98,10 +120,10 @@ class ToolsDialog(QDialog):
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        self.setWindowTitle("Tools")
+        self.setWindowTitle("Converter programs")
         self.resize(920, 600)
         self.manager = ToolsManager()
-        self._install_worker: _InstallWorker | None = None
+        self._install_worker: InstallWorker | None = None
         self._version_worker: _VersionWorker | None = None
         # Reasons already written to the log this run; see `_on_version_report`.
         self._reasons_logged: set[str] = set()
@@ -111,15 +133,15 @@ class ToolsDialog(QDialog):
         layout.setSpacing(9)
 
         intro = QLabel(
-            "Converters are downloaded from their own projects and checked against a "
-            "pinned SHA-256 before they are installed. Nothing is bundled with this app.")
+            "These free programs do the actual converting. Each one is downloaded from "
+            "its own project and checked against a known fingerprint before it is used.")
         intro.setWordWrap(True)
         intro.setProperty("role", "second")
         layout.addWidget(intro)
 
         self.table = QTableWidget(0, 6)
         self.table.setHorizontalHeaderLabels(
-            ["Tool", "Installed", "Pinned", "Upstream", "Used for", "Licence"])
+            ["Program", "Status", "Version", "Newest", "Used for", "Licence"])
         self.table.verticalHeader().setVisible(False)
         self.table.setShowGrid(False)
         self.table.setSelectionMode(QTableWidget.SelectionMode.NoSelection)
@@ -132,8 +154,8 @@ class ToolsDialog(QDialog):
             (self.COL_STATUS, QHeaderView.ResizeMode.ResizeToContents),
             (self.COL_PINNED, QHeaderView.ResizeMode.ResizeToContents),
             (self.COL_LATEST, QHeaderView.ResizeMode.ResizeToContents),
-            (self.COL_FORMATS, QHeaderView.ResizeMode.ResizeToContents),
-            (self.COL_LICENCE, QHeaderView.ResizeMode.Stretch),
+            (self.COL_FORMATS, QHeaderView.ResizeMode.Stretch),
+            (self.COL_LICENCE, QHeaderView.ResizeMode.ResizeToContents),
         ):
             header.setSectionResizeMode(column, mode)
         for column in range(self.table.columnCount()):
@@ -147,12 +169,17 @@ class ToolsDialog(QDialog):
         self.location.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         layout.addWidget(self.location)
 
+        self.details_box = QCheckBox("Show details (versions, licences, update check)")
+        self.details_box.toggled.connect(self._show_details)
+        layout.addWidget(self.details_box)
+
         layout.addLayout(self._build_buttons())
 
         self.log = QPlainTextEdit()
         self.log.setObjectName("log")
         self.log.setReadOnly(True)
         self.log.setMaximumHeight(110)
+        self.log.hide()
         layout.addWidget(self.log)
 
         box = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
@@ -161,6 +188,17 @@ class ToolsDialog(QDialog):
         layout.addWidget(box)
 
         self.refresh()
+        self._show_details(False)
+
+    def _say(self, text: str) -> None:
+        self.log.show()
+        self.log.appendPlainText(text)
+
+    def _show_details(self, shown: bool) -> None:
+        for column in self._DETAIL_COLUMNS:
+            self.table.setColumnHidden(column, not shown)
+        self.check_button.setVisible(shown)
+        self.location.setVisible(shown)
 
     def _build_buttons(self) -> QHBoxLayout:
         row = QHBoxLayout()
@@ -180,12 +218,12 @@ class ToolsDialog(QDialog):
         self.check_button.clicked.connect(self._check_versions)
         row.addWidget(self.check_button)
 
-        refresh = QPushButton("Rescan")
-        refresh.setToolTip("Look again at what is in the tools folder.")
+        refresh = QPushButton("Look again")
+        refresh.setToolTip("Check the tools folder again, after copying a program in by hand.")
         refresh.clicked.connect(self.refresh)
         row.addWidget(refresh)
 
-        pick_dolphin = QPushButton("Use my DolphinTool...")
+        pick_dolphin = QPushButton("Use my own DolphinTool...")
         pick_dolphin.setToolTip(
             "Copy DolphinTool.exe out of a Dolphin install you already have.\n"
             "Preferred over downloading: Dolphin publishes no checksum to verify against.")
@@ -218,7 +256,7 @@ class ToolsDialog(QDialog):
 
             outdated = spec.key in stale
             state = QTableWidgetItem(
-                "outdated" if outdated else ("yes" if installed else "no"))
+                "Needs update" if outdated else ("Ready" if installed else "Not installed"))
             if outdated:
                 state.setForeground(theme.color("warn"))
                 state.setToolTip(
@@ -237,7 +275,9 @@ class ToolsDialog(QDialog):
             self.table.setItem(row, self.COL_PINNED, pinned)
 
             self.table.setItem(row, self.COL_LATEST, QTableWidgetItem(""))
-            self.table.setItem(row, self.COL_FORMATS, QTableWidgetItem(", ".join(spec.formats)))
+            used_for = QTableWidgetItem(_USED_FOR.get(spec.key, ", ".join(spec.formats)))
+            used_for.setToolTip(f"Formats: {', '.join(spec.formats)}")
+            self.table.setItem(row, self.COL_FORMATS, used_for)
             licence = QTableWidgetItem(spec.license)
             licence.setToolTip(licence_note)
             self.table.setItem(row, self.COL_LICENCE, licence)
@@ -245,13 +285,15 @@ class ToolsDialog(QDialog):
         missing = sum(1 for ready in status.values() if not ready)
         self.download_button.setEnabled(missing + len(stale) > 0)
         if missing == 0 and not stale:
-            self.download_button.setText("Everything installed")
+            self.download_button.setText("Everything is installed")
         elif missing == 0:
-            self.download_button.setText(f"Update {len(stale)} outdated")
+            self.download_button.setText(
+                f"Update {len(stale)} program{'s' if len(stale) != 1 else ''}")
         elif stale:
             self.download_button.setText(f"Install {missing} missing, update {len(stale)}")
         else:
-            self.download_button.setText(f"Download {missing} missing")
+            self.download_button.setText(
+                f"Install {missing} missing program{'s' if missing != 1 else ''}")
         self.location.setText(f"Installed in: {self.manager.tools_root}")
 
     def _row_of(self, key: str) -> int:
@@ -270,19 +312,19 @@ class ToolsDialog(QDialog):
 
     def _download(self) -> None:
         self.download_button.setEnabled(False)
-        self.log.appendPlainText("Starting.")
-        self._install_worker = _InstallWorker()
-        self._install_worker.log.connect(self.log.appendPlainText)
+        self._say("Starting.")
+        self._install_worker = InstallWorker()
+        self._install_worker.log.connect(self._say)
         self._install_worker.done.connect(self._on_installed)
         self._install_worker.start()
 
     def _on_installed(self, errors: list[str]) -> None:
         self.refresh()
         if not errors:
-            self.log.appendPlainText("Done.")
+            self._say("Done.")
             return
         for error in errors:
-            self.log.appendPlainText(error)
+            self._say(error)
 
     def _pick_dolphin(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
@@ -290,7 +332,7 @@ class ToolsDialog(QDialog):
         if not path:
             return
         shutil.copy2(path, self.manager.tools_root / "DolphinTool.exe")
-        self.log.appendPlainText(f"Copied DolphinTool from {path}")
+        self._say(f"Copied DolphinTool from {path}")
         self.refresh()
 
     # ---------------------------------------------------------- version check
@@ -319,8 +361,7 @@ class ToolsDialog(QDialog):
 
         if report.status is Status.BEHIND:
             cell.setForeground(theme.color("warn"))
-            self.log.appendPlainText(
-                f"{report.spec.label}: pinned {report.spec.version}, {report.detail}")
+            self._say(f"{report.spec.label}: pinned {report.spec.version}, {report.detail}")
         elif report.status in (Status.UNKNOWN, Status.MANUAL):
             cell.setForeground(theme.color("textThird"))
             # "could not check" on its own reads as a fault in the tool. Say why,
@@ -328,14 +369,14 @@ class ToolsDialog(QDialog):
             # carries the same sentence and nine copies of it is not a log.
             if report.status is Status.UNKNOWN and report.detail not in self._reasons_logged:
                 self._reasons_logged.add(report.detail)
-                self.log.appendPlainText(report.detail)
+                self._say(report.detail)
         else:
             cell.setForeground(theme.color("ok"))
 
     def _on_versions_done(self) -> None:
         self.check_button.setEnabled(True)
         self.check_button.setText("Check for updates")
-        self.log.appendPlainText(
+        self._say(
             "A tool marked as having a newer version is not installed from here: every "
             "download is verified against a checksum recorded in this release, so an "
             "updated tool arrives with the next update of the app. Double-click a row "

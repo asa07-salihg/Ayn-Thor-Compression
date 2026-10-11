@@ -46,7 +46,7 @@ class ConversionMode(str, Enum):
     """Direction of travel.
 
     COMPRESS packs into the platform container. DECOMPRESS reverses a
-    container (chd→cue, nsz→nsp) or unzips an archive (7z/zip). MOVE copies
+    container (chd to cue, nsz to nsp) or unzips an archive (7z/zip). MOVE copies
     the file into its game folder with no conversion.
     """
 
@@ -103,12 +103,12 @@ class QueueItem:
     member: str = ""
     # Bytes the Size column and savings math should use. For an archive
     # member this is the declared size of that member, not the whole archive.
-    # Zero means "unknown — fall back to path.stat()".
+    # Zero means unknown: fall back to path.stat().
     source_bytes: int = 0
     # What the File column shows. Empty means the file's own name; a folder
     # that was added as a whole labels its rows `folder/sub/file` instead.
     label: str = ""
-    status: str = "Waiting"
+    status: str = "Ready"
     message: str = ""
 
     @property

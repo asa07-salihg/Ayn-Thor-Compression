@@ -705,27 +705,11 @@ class GeneralPanel(QWidget):
         layout.setSpacing(10)
 
         intro = QLabel(
-            "Applies to everything in the queue. Per-format settings are in the "
-            "list on the left.")
+            "Where finished games go, and what happens to the originals. Everything "
+            "under Advanced on the left is optional.")
         intro.setWordWrap(True)
         intro.setProperty("role", "second")
         layout.addRow(intro)
-
-        out_row = QWidget()
-        out_layout = QHBoxLayout(out_row)
-        out_layout.setContentsMargins(0, 0, 0, 0)
-        out_layout.setSpacing(6)
-        self.output_edit = QLineEdit()
-        self.output_edit.setPlaceholderText("Same folder as the source")
-        self.output_edit.setReadOnly(True)
-        browse = QPushButton("Browse")
-        browse.clicked.connect(self._pick_output)
-        clear = QPushButton("Clear")
-        clear.clicked.connect(lambda: self.output_edit.setText(""))
-        out_layout.addWidget(self.output_edit, stretch=1)
-        out_layout.addWidget(browse)
-        out_layout.addWidget(clear)
-        layout.addRow("Output folder:", out_row)
 
         card_row = QWidget()
         card_layout = QHBoxLayout(card_row)
@@ -735,33 +719,51 @@ class GeneralPanel(QWidget):
         self.esde_edit.setPlaceholderText("Not set")
         self.esde_edit.setReadOnly(True)
         self.esde_edit.setToolTip(
-            "Your ES-DE ROMs folder. Set it and a converted file goes straight\n"
-            "into the platform folder it belongs in, which is what you want when\n"
-            "the source is a fresh download rather than the folder itself.\n"
-            "The Platform column on each row decides which one.")
-        card_browse = QPushButton("Browse")
+            "The folder with a folder for each console inside it, on an SD card or\n"
+            "this computer. Each finished game goes into the folder for its console,\n"
+            "such as psx or switch. The Platform column on each row decides which.")
+        card_browse = QPushButton("Choose...")
         card_browse.clicked.connect(self._pick_card)
         card_clear = QPushButton("Clear")
         card_clear.clicked.connect(lambda: self.esde_edit.setText(""))
         card_layout.addWidget(self.esde_edit, stretch=1)
         card_layout.addWidget(card_browse)
         card_layout.addWidget(card_clear)
-        layout.addRow("ES-DE ROMs folder:", card_row)
+        layout.addRow("ROMs folder:", card_row)
+
+        out_row = QWidget()
+        out_layout = QHBoxLayout(out_row)
+        out_layout.setContentsMargins(0, 0, 0, 0)
+        out_layout.setSpacing(6)
+        self.output_edit = QLineEdit()
+        self.output_edit.setPlaceholderText("Not set")
+        self.output_edit.setReadOnly(True)
+        self.output_edit.setToolTip(
+            "Used when no ROMs folder is set, and for files whose console isn't known.\n"
+            "Leave it empty to save next to the original files.")
+        browse = QPushButton("Choose...")
+        browse.clicked.connect(self._pick_output)
+        clear = QPushButton("Clear")
+        clear.clicked.connect(lambda: self.output_edit.setText(""))
+        out_layout.addWidget(self.output_edit, stretch=1)
+        out_layout.addWidget(browse)
+        out_layout.addWidget(clear)
+        layout.addRow("Other output folder:", out_row)
 
         self.conflict_combo = QComboBox()
-        self.conflict_combo.addItem("Skip it", "skip")
-        self.conflict_combo.addItem("Overwrite it", "overwrite")
-        self.conflict_combo.addItem("Write alongside it", "rename")
+        self.conflict_combo.addItem("Skip it (recommended)", "skip")
+        self.conflict_combo.addItem("Replace it", "overwrite")
+        self.conflict_combo.addItem("Keep both", "rename")
         self.conflict_combo.setToolTip(
-            "Skip by default, so re-running over a finished folder does nothing\n"
-            "rather than redoing hours of work.")
-        layout.addRow("If the output exists:", self.conflict_combo)
+            "Skip means running the same games again does nothing, instead of\n"
+            "redoing hours of work.")
+        layout.addRow("If the file is already there:", self.conflict_combo)
 
         self.game_folders = QCheckBox("Put each game in its own folder")
         self.game_folders.setToolTip(
-            "Writes Game.chd/Game.chd, which is how ES-DE and Cocoon find a\n"
-            "title when they search subfolders. Extra discs, updates and DLC\n"
-            "sit beside the primary file.")
+            "Saves Game.chd inside a folder that is also called Game.chd. ES-DE\n"
+            "shows that folder as one game, and updates, DLC and extra discs sit\n"
+            "next to it.")
         layout.addRow("", self.game_folders)
 
         self.show_empty_folders = QCheckBox("Show empty folders in the queue")
@@ -772,10 +774,11 @@ class GeneralPanel(QWidget):
             "is already filled.")
         layout.addRow("", self.show_empty_folders)
 
-        self.delete_source = QCheckBox("Delete the source after converting")
+        self.delete_source = QCheckBox("Delete the original after it converts")
         self.delete_source.setToolTip(
-            "Off every time the app starts, on purpose. It asks before a batch\n"
-            "runs, and never deletes unless the output exists and is not empty.")
+            "Off every time the app starts, on purpose. You are asked before a\n"
+            "batch runs, and an original is only removed once its converted file\n"
+            "exists and is not empty.")
         layout.addRow("", self.delete_source)
 
         for widget, signal in (
@@ -796,7 +799,7 @@ class GeneralPanel(QWidget):
     def _pick_card(self) -> None:
         """Accepts either the ROMs folder or the folder holding it; ES-DE's own
         layout rules work out which was chosen."""
-        path = QFileDialog.getExistingDirectory(self, "Choose your ES-DE ROMs folder")
+        path = QFileDialog.getExistingDirectory(self, "Choose your ROMs folder")
         if path:
             self.esde_edit.setText(str(resolve_roms_root(Path(path))))
 

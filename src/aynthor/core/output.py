@@ -176,7 +176,7 @@ def _is_first_disc(disc: str) -> bool:
 
     `01` is disc one. Comparing the token as text made it disc *something
     else*, so a redump-style `Final Fantasy VII (Disc 01/02/03)` set produced
-    a folder with no file matching its own name — which ES-DE hands to the
+    a folder with no file matching its own name, which ES-DE hands to the
     emulator as a directory, and nothing launches.
     """
     if disc in ("", "a"):

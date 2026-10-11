@@ -13,7 +13,7 @@ Why
     drop dumps into, even though none of them is named like a ROM.
 
     When the card already holds a base game folder, a later DLC or disc is
-    matched by title header (one name is a prefix of the other) — not by
+    matched by title header (one name is a prefix of the other), not by
     keywords like "dlc" or "update".
 
 Used by
@@ -110,7 +110,7 @@ def _walk_dirs(root: Path) -> list[Path]:
 
 
 def folder_kind(path: Path) -> str:
-    """`game`, `platform`, or `dir` — how the tree treats a dropped-on folder."""
+    """`game`, `platform`, or `dir`: how the tree treats a dropped-on folder."""
     if is_game_folder(path):
         return "game"
     if is_platform_folder(path):

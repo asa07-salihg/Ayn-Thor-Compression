@@ -58,15 +58,17 @@ def app(tmp_path_factory) -> QApplication:
     """
     from PySide6.QtCore import QSettings
 
-    from aynthor.ui.state import APPLICATION, ORGANISATION
+    from aynthor.ui import state
     from aynthor.ui.theme import Mode, apply_theme
 
     scratch = tmp_path_factory.mktemp("settings")
     QSettings.setDefaultFormat(QSettings.Format.IniFormat)
-    for fmt in (QSettings.Format.IniFormat, QSettings.Format.NativeFormat):
-        QSettings.setPath(fmt, QSettings.Scope.UserScope, str(scratch))
-    # Belt and braces: whatever the path resolved to, start it empty.
-    QSettings(ORGANISATION, APPLICATION).clear()
+    QSettings.setPath(QSettings.Format.IniFormat, QSettings.Scope.UserScope, str(scratch))
+    # Refuse to go on if the store still points anywhere else: clearing it is
+    # the next line, and on Windows "anywhere else" is the real registry.
+    where = Path(state._store().fileName()).resolve()
+    assert where.is_relative_to(scratch.resolve()), where
+    state._store().clear()
 
     instance = QApplication.instance() or QApplication([])
     apply_theme(instance, Mode.DARK)
@@ -76,13 +78,11 @@ def app(tmp_path_factory) -> QApplication:
 @pytest.fixture(autouse=True)
 def _clear_saved_settings(app):
     """MainWindow.closeEvent persists settings; one test must not leak into the next."""
-    from PySide6.QtCore import QSettings
+    from aynthor.ui import state
 
-    from aynthor.ui.state import APPLICATION, ORGANISATION
-
-    QSettings(ORGANISATION, APPLICATION).clear()
+    state._store().clear()
     yield
-    QSettings(ORGANISATION, APPLICATION).clear()
+    state._store().clear()
 
 
 @pytest.fixture()
@@ -174,6 +174,21 @@ def test_the_row_menu_opens_the_matching_settings_page(app, settings, presets):
     assert heading == "NSZ"
 
 
+def test_everything_but_general_sits_under_an_optional_heading(app, settings, presets):
+    dialog = open_settings(app, settings, presets)
+    titles = [dialog.categories.item(row).text() for row in range(dialog.categories.count())]
+    assert titles[:3] == ["General", "Advanced (optional)", "Platform presets"]
+    heading = dialog.categories.item(1)
+    assert heading.flags() == Qt.ItemFlag.NoItemFlags
+
+    dialog.show_page("General")
+    general = dialog.pages.currentWidget()
+    dialog.categories.setCurrentRow(1)
+    app.processEvents()
+    assert dialog.pages.currentWidget() is general
+    dialog.close()
+
+
 def test_saving_reports_only_the_pages_that_were_edited(app, settings, presets):
     dialog = open_settings(app, settings, presets)
     assert dialog.changed_formats() == set()
@@ -192,9 +207,10 @@ def test_settings_footer_does_not_cover_preset_controls(app, settings, presets):
 
     dialog = open_settings(app, settings, presets)
     dialog.resize(880, 620)
-    dialog.categories.setCurrentRow(1)
+    dialog.show_page("Platform presets")
     app.processEvents()
     page = dialog.presets_page
+    assert dialog.pages.currentWidget().isAncestorOf(page)
     row = next(
         r for r in range(page.table.rowCount())
         if page.table.item(r, page.COL_PLATFORM).data(Qt.ItemDataRole.UserRole)
@@ -446,7 +462,7 @@ def test_the_part_cell_can_move_the_folder_onto_the_xci(app, tmp_path):
 
 
 def test_xci_base_keeps_nsp_update_and_dlc_in_same_folder(app, tmp_path):
-    """Base.xci/Base.xci must own same-game .nsp Update/DLC — not invent Base.nsp/."""
+    """Base.xci/Base.xci must own same-game .nsp Update/DLC instead of inventing Base.nsp/."""
     from aynthor.core.models import ConversionMode
     from aynthor.ui.main_window import MainWindow
 
@@ -829,7 +845,7 @@ def test_the_platform_menu_offers_every_esde_folder(app, tmp_path):
 
 def test_switching_format_does_not_carry_the_old_format_settings(app, tmp_path):
     """A GameCube row is RVZ at level 5. Switched to another format it used to
-    keep every option it had, so `level` — 5 to DolphinTool and 9 to 7-Zip —
+    keep every option it had, so `level` (5 to DolphinTool, 9 to 7-Zip)
     silently followed it across. CHD is the switch the menu actually offers
     for an ISO; it has no `level` at all, so the old keys must all be gone."""
     from aynthor.core.models import CompressionFormat
@@ -939,7 +955,7 @@ def test_adding_a_file_offers_join_to_an_existing_disk_folder(app, tmp_path):
         game.child(i).text(window.queue.COL_STATUS)
         for i in range(game.childCount())
     }
-    assert "Already on card" in statuses
+    assert "Already there" in statuses
     window.close()
 
 
@@ -1006,6 +1022,422 @@ def test_renaming_a_game_folder_renames_disk_too(app, tmp_path):
     assert (roms / "switch" / "New Title.nsp").is_dir()
     assert not (roms / "switch" / "Old Title.nsp").exists()
     window.close()
+
+
+# ------------------------------------------------------------- setup guide
+
+def _guide(settings):
+    from aynthor.core.tools.manager import ToolsManager
+    from aynthor.ui.welcome_dialog import WelcomeDialog
+
+    return WelcomeDialog(settings, ToolsManager())
+
+
+def test_the_setup_guide_has_three_steps_and_skip_is_remembered(app):
+    from aynthor.ui import state
+
+    settings = FormatSettings()
+    dialog = _guide(settings)
+    dialog.show()
+    app.processEvents()
+    assert dialog.pages.count() == 3
+    assert dialog.step_label.text() == "Step 1 of 3"
+    assert not state.welcome_done()
+
+    dialog.skip_button.click()
+    assert state.welcome_done()
+    assert settings.esde_root == ""
+
+
+def test_the_setup_guide_waits_for_a_roms_folder(app, tmp_path):
+    from aynthor.ui import state
+    from aynthor.ui.welcome_dialog import Destination
+
+    roms = tmp_path / "ROMs"
+    roms.mkdir()
+    settings = FormatSettings()
+    dialog = _guide(settings)
+    dialog.show()
+    dialog.next_page()
+    app.processEvents()
+    assert dialog.step_label.text() == "Step 2 of 3"
+    # The ROMs folder option is preselected for a new user, but no folder yet.
+    assert not dialog.next_button.isEnabled()
+    assert dialog.destination_hint.isVisible()
+
+    dialog.choose_destination(Destination.ROMS, roms)
+    assert dialog.next_button.isEnabled()
+    dialog.next_page()
+    assert dialog.next_button.text() == "Finish"
+    dialog.next_page()
+
+    assert Path(settings.esde_root) == roms.resolve()
+    assert state.welcome_done()
+
+
+def test_picking_the_drive_finds_the_roms_folder_inside(app, tmp_path):
+    from aynthor.ui.welcome_dialog import Destination
+
+    (tmp_path / "ROMs" / "psx").mkdir(parents=True)
+    settings = FormatSettings()
+    dialog = _guide(settings)
+    dialog.choose_destination(Destination.ROMS, tmp_path)
+    dialog.finish()
+    assert Path(settings.esde_root) == (tmp_path / "ROMs").resolve()
+
+
+def test_the_setup_guide_starts_from_what_is_already_set(app, tmp_path):
+    from aynthor.ui.welcome_dialog import Destination
+
+    settings = FormatSettings(esde_root=str(tmp_path))
+    dialog = _guide(settings)
+    dialog.next_page()
+    assert dialog.selected_destination() is Destination.ROMS
+    assert dialog.next_button.isEnabled()
+
+    dialog.choose_destination(Destination.BESIDE, tmp_path)
+    dialog.finish()
+    assert settings.esde_root == ""
+
+
+def test_the_setup_guide_keeps_a_chosen_keys_file(app, tmp_path):
+    from aynthor.ui.welcome_dialog import Destination
+
+    keys = tmp_path / "prod.keys"
+    keys.write_text("x")
+    settings = FormatSettings()
+    dialog = _guide(settings)
+    dialog.choose_keys(keys)
+    assert str(tmp_path) in dialog.keys_status.text()
+    dialog.choose_destination(Destination.BESIDE, tmp_path)
+    dialog.finish()
+    assert settings.keys_path == str(keys)
+
+
+def test_the_bottom_bar_says_where_games_will_go(app, tmp_path):
+    from aynthor.ui.main_window import MainWindow
+
+    window = MainWindow()
+    window.show()
+    app.processEvents()
+    assert window.destination_button.text() == "Saving next to the original files"
+
+    window.settings.esde_root = str(tmp_path)
+    window._refresh_summary()
+    assert window.destination_button.text().startswith("Saving to ")
+    window.close()
+
+
+def test_skipped_files_are_counted_where_they_can_be_seen(app, tmp_path):
+    """A folder of files the app cannot use used to leave the window looking
+    unchanged, with the reasons in a closed log."""
+    from aynthor.ui.main_window import MainWindow
+
+    roms = tmp_path / "ROMs" / "fbneo"
+    roms.mkdir(parents=True)
+    (roms / "sf2.zip").write_bytes(b"\0" * 64)
+
+    window = MainWindow()
+    window.show()
+    window._add([roms / "sf2.zip"])
+    app.processEvents()
+    assert window.skipped_button.isVisible()
+    assert window.skipped_button.text() == "1 skipped"
+    window.skipped_button.click()
+    assert window.log_view.isVisible()
+    window.close()
+
+
+# ------------------------------------------------------------ before start
+
+def _problem(kind, rows=(1,), tools=()):
+    from aynthor.core.preflight import Problem
+
+    return Problem(kind, tuple(rows), tuple(tools))
+
+
+def test_the_problems_before_start_read_as_sentences(app):
+    from aynthor.core.preflight import ProblemKind
+    from aynthor.ui.preflight_dialog import describe
+
+    assert describe(_problem(ProblemKind.MISSING_TOOLS, (1, 2), ("chdman",))) == (
+        "2 files need chdman (MAME) to convert, and it isn't installed yet.")
+    assert describe(_problem(ProblemKind.MISSING_TOOLS, (1,), ("chdman", "DolphinTool"))) == (
+        "1 file needs chdman (MAME) and DolphinTool to convert, and they aren't "
+        "installed yet.")
+    assert describe(_problem(ProblemKind.NO_SWITCH_KEYS)) == (
+        "1 Switch file needs a prod.keys file from your own Switch.")
+    assert describe(_problem(ProblemKind.UNKNOWN_PLATFORM)).startswith(
+        "The app couldn't tell which console 1 file is for, so it would be saved")
+
+
+def test_start_stays_off_until_every_blocking_problem_is_handled(app):
+    from aynthor.core.preflight import ProblemKind
+    from aynthor.ui.preflight_dialog import PreflightDialog
+
+    problems = [_problem(ProblemKind.MISSING_TOOLS, (1, 2), ("chdman",)),
+                _problem(ProblemKind.UNKNOWN_PLATFORM, (3,))]
+    dialog = PreflightDialog(problems, FormatSettings(), lambda: problems)
+    dialog.show()
+    app.processEvents()
+    assert not dialog.start_button.isEnabled()
+
+    dialog.skip(ProblemKind.MISSING_TOOLS)
+    assert dialog.start_button.isEnabled(), "an unknown console alone does not block"
+    assert dialog.skipped_rows() == {1, 2}
+
+    dialog.undo(ProblemKind.MISSING_TOOLS)
+    assert not dialog.start_button.isEnabled()
+    dialog.close()
+
+
+def test_choosing_keys_before_start_fixes_the_switch_problem(app, tmp_path):
+    from aynthor.core.preflight import ProblemKind
+    from aynthor.ui.preflight_dialog import PreflightDialog
+
+    keys = tmp_path / "prod.keys"
+    keys.write_text("x")
+    settings = FormatSettings()
+    problems = [_problem(ProblemKind.NO_SWITCH_KEYS)]
+    dialog = PreflightDialog(
+        problems, settings, lambda: [] if settings.keys_path else problems)
+    assert not dialog.start_button.isEnabled()
+
+    dialog.choose_keys(keys)
+    assert settings.keys_path == str(keys)
+    assert dialog.start_button.isEnabled()
+    assert dialog.skipped_rows() == set()
+
+
+def test_start_asks_first_when_a_program_is_missing(app, tmp_path, monkeypatch):
+    from aynthor.core.preflight import ProblemKind
+    from aynthor.ui import main_window as main_window_module
+    from aynthor.ui.main_window import MainWindow
+
+    ps2 = tmp_path / "ps2"
+    ps2.mkdir()
+    (ps2 / "game.iso").write_bytes(b"\0" * 2048)
+    seen: dict[str, object] = {}
+
+    class Cancelled:
+        def __init__(self, problems, _settings, _recheck, **_kwargs):
+            seen["kinds"] = [problem.kind for problem in problems]
+
+        def exec(self):
+            return 0
+
+        def skipped_rows(self):
+            return set()
+
+    monkeypatch.setattr(main_window_module, "PreflightDialog", Cancelled)
+    window = MainWindow()
+    window.show()
+    window.tools.is_available = lambda _key: False
+    window._add([ps2])
+    app.processEvents()
+    window._start()
+
+    assert seen["kinds"] == [ProblemKind.MISSING_TOOLS]
+    assert window._runner is None
+    window.close()
+
+
+def test_skipped_rows_say_so_and_do_not_run(app, tmp_path, monkeypatch):
+    from PySide6.QtWidgets import QDialog
+
+    from aynthor.ui import main_window as main_window_module
+    from aynthor.ui.main_window import MainWindow
+
+    ps2 = tmp_path / "ps2"
+    ps2.mkdir()
+    (ps2 / "game.iso").write_bytes(b"\0" * 2048)
+
+    class SkipEverything:
+        def __init__(self, problems, _settings, _recheck, **_kwargs):
+            self.rows = {row for problem in problems for row in problem.rows}
+
+        def exec(self):
+            return QDialog.DialogCode.Accepted
+
+        def skipped_rows(self):
+            return self.rows
+
+    monkeypatch.setattr(main_window_module, "PreflightDialog", SkipEverything)
+    window = MainWindow()
+    window.show()
+    window.tools.is_available = lambda _key: False
+    window._add([ps2])
+    app.processEvents()
+    window._start()
+
+    assert window._runner is None
+    assert window.queue.item(0, window.queue.COL_STATUS).text() == "Skipped"
+    assert "every file was skipped" in window.log_view.toPlainText()
+    window.close()
+
+
+# ---------------------------------------------------- failures and the end
+
+def test_the_failure_window_offers_the_fix_and_keeps_the_raw_text_aside(app):
+    from aynthor.core.explain import Explanation, Fix
+    from aynthor.ui.failure_dialog import FailureDialog
+
+    dialog = FailureDialog("game.iso", Explanation(
+        "chdman isn't installed yet.", "Open Tools and install it.", Fix.OPEN_TOOLS,
+        "chdman is not installed (looked in C:\\tools)."))
+    dialog.show()
+    app.processEvents()
+    assert dialog.fix_button is not None and dialog.fix_button.text() == "Open Tools"
+    assert not dialog.details.isVisible()
+
+    dialog.details_button.click()
+    assert dialog.details.isVisible()
+    dialog.fix_button.click()
+    assert dialog.chosen_fix is Fix.OPEN_TOOLS
+
+
+def test_clicking_failed_explains_the_row(app, tmp_path, monkeypatch):
+    from aynthor.core.converters.base import missing_tool
+    from aynthor.core.explain import Fix
+    from aynthor.ui import main_window as main_window_module
+    from aynthor.ui.main_window import MainWindow
+
+    ps2 = tmp_path / "ps2"
+    ps2.mkdir()
+    (ps2 / "game.iso").write_bytes(b"\0" * 2048)
+    seen: dict[str, object] = {}
+
+    class Recorded:
+        def __init__(self, name, explanation, _parent=None):
+            seen["name"] = name
+            seen["fix"] = explanation.fix
+            self.chosen_fix = None
+
+        def exec(self):
+            return 0
+
+    monkeypatch.setattr(main_window_module, "FailureDialog", Recorded)
+    window = MainWindow()
+    window.show()
+    window._add([ps2])
+    app.processEvents()
+    item_id = window.queue.queue_items()[0][0]
+    message = missing_tool("chdman", tmp_path / "tools")
+    window.queue.update_status(item_id, "Failed", message)
+
+    node = window.queue.file_at(item_id)
+    assert "isn't installed yet" in node.toolTip(window.queue.COL_STATUS)
+    assert window.queue.failure_message(item_id) == message
+    window.queue._on_item_clicked(node, window.queue.COL_STATUS)
+    assert seen["fix"] is Fix.OPEN_TOOLS
+    assert "game.iso" in str(seen["name"])
+
+    window.queue.update_status(item_id, "Ready")
+    assert window.queue.failure_message(item_id) is None
+    window.close()
+
+
+def test_the_end_of_a_batch_reads_as_sentences():
+    from aynthor.ui.finish_dialog import summary_lines
+
+    assert summary_lines(3, 0, 0, 0) == ["3 games done."]
+    assert summary_lines(1, 2, 1, 6416917776) == [
+        "1 game done. You saved 6.0 GB.", "2 didn't work.", "1 skipped."]
+
+
+def test_a_finished_batch_shows_the_summary_without_blocking(app, tmp_path):
+    from aynthor.ui.main_window import MainWindow
+
+    window = MainWindow()
+    window.show()
+    window.settings.esde_root = str(tmp_path)
+    window._ok_count = 2
+    window._failed_count = 1
+    window._saved_bytes = 1024 * 1024
+    window._on_all_finished()
+    app.processEvents()
+
+    dialog = window._finish_dialog
+    assert dialog is not None and dialog.isVisible()
+    assert dialog.failures_button is not None and dialog.folder_button is not None
+    assert dialog.body.text().startswith("2 games done. You saved 1.0 MB.")
+    dialog.reject()
+    window.close()
+
+
+def test_a_cancelled_batch_ends_without_a_summary(app):
+    from aynthor.ui.main_window import MainWindow
+
+    window = MainWindow()
+    window._cancelled = True
+    window._on_all_finished()
+    assert window._finish_dialog is None
+    window.close()
+
+
+def test_the_compact_strip_has_room_for_its_buttons(app, tmp_path):
+    """The empty-queue spacing used to stay behind once the queue filled,
+    pushing the Add buttons out of the bottom of the strip."""
+    from aynthor.ui.main_window import MainWindow
+
+    (tmp_path / "ps2").mkdir()
+    (tmp_path / "ps2" / "game.iso").write_bytes(b"\0" * 2048)
+    window = MainWindow()
+    window.resize(1040, 660)
+    window.show()
+    assert window.drop_zone.steps.isVisible()
+    window._add([tmp_path / "ps2"])
+    app.processEvents()
+
+    zone = window.drop_zone
+    assert not zone.steps.isVisible() and not zone.intro.isVisible()
+    bottom = zone.buttons.geometry().bottom()
+    assert bottom <= zone.contentsRect().bottom(), (bottom, zone.contentsRect())
+    window.close()
+
+
+# ------------------------------------------------------------- icons
+
+def test_every_icon_draws_in_both_themes(app):
+    from aynthor.ui import icons
+    from aynthor.ui.theme import Mode, apply_theme
+
+    try:
+        for mode in (Mode.LIGHT, Mode.DARK):
+            apply_theme(app, mode)
+            for name in icons.names():
+                assert not icons.pixmap(name, "text", 24).isNull(), name
+                assert not icons.icon(name, "accentText").isNull(), name
+    finally:
+        apply_theme(app, Mode.DARK)
+
+
+def test_the_logo_draws_large_and_small(app):
+    from aynthor.ui import icons
+    from aynthor.ui.theme import app_icon
+
+    assert not icons.logo(40).isNull()
+    assert not icons.logo(16).isNull()
+    sizes = {size.width() for size in app_icon().availableSizes()}
+    assert {16, 32, 256} <= sizes
+
+
+def test_a_misspelt_icon_name_fails_loudly(app):
+    from aynthor.ui import icons
+
+    with pytest.raises(FileNotFoundError):
+        icons.icon("no-such-icon")
+
+
+def test_a_clean_batch_ends_with_the_success_summary(app, tmp_path):
+    from aynthor.ui.finish_dialog import FinishDialog
+
+    dialog = FinishDialog(3, 0, 0, 0, tmp_path)
+    dialog.show()
+    app.processEvents()
+    assert dialog.failures_button is None
+    assert dialog.folder_button is not None
+    dialog.close()
 
 
 # ----------------------------------------------------------------- dialogs

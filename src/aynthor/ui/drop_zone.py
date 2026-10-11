@@ -7,9 +7,10 @@ Why
     is why there is no toolbar anywhere else.
 
     It has two sizes. Empty, it fills the top of the window and says what to
-    do. Once the queue has rows it shrinks to a single strip, because at that
-    point the table is what the user is looking at and a large empty rectangle
-    above it is wasted screen.
+    do, with the whole job laid out as three numbered steps for someone who
+    has never used a tool like this. Once the queue has rows it shrinks to a
+    single strip, because at that point the table is what the user is looking
+    at and a large empty rectangle above it is wasted screen.
 
 Used by
     `ui.main_window`.
@@ -19,8 +20,16 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QDragEnterEvent, QDragLeaveEvent, QDropEvent
+from PySide6.QtCore import QPointF, QSize, Qt, Signal
+from PySide6.QtGui import (
+    QDragEnterEvent,
+    QDragLeaveEvent,
+    QDropEvent,
+    QPainter,
+    QPainterPath,
+    QPaintEvent,
+    QPen,
+)
 from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
@@ -31,7 +40,45 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from aynthor.ui import theme
+from aynthor.ui import icons, theme
+
+STEPS = ("Add your games", "Check what each one becomes", "Press Start")
+
+
+class _DropIcon(QWidget):
+    """An arrow going down into a tray, in the accent colour while dragging."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.setFixedSize(64, 56)
+        self.active = False
+
+    def paintEvent(self, _event: QPaintEvent) -> None:
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        pen = QPen(theme.color("accent" if self.active else "textThird"), 2.4)
+        pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+        pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+        painter.setPen(pen)
+
+        width = self.width()
+        middle = width / 2
+        painter.drawLine(QPointF(middle, 4), QPointF(middle, 28))
+        painter.drawLine(QPointF(middle - 9, 19), QPointF(middle, 28))
+        painter.drawLine(QPointF(middle + 9, 19), QPointF(middle, 28))
+
+        tray = QPainterPath()
+        tray.moveTo(8, 32)
+        tray.lineTo(8, 50)
+        tray.lineTo(width - 8, 50)
+        tray.lineTo(width - 8, 32)
+        tray.moveTo(8, 38)
+        tray.lineTo(20, 38)
+        tray.lineTo(24, 43)
+        tray.lineTo(width - 24, 43)
+        tray.lineTo(width - 20, 38)
+        tray.lineTo(width - 8, 38)
+        painter.drawPath(tray)
 
 
 class DropZone(QFrame):
@@ -42,7 +89,7 @@ class DropZone(QFrame):
     expand_all = Signal()
     collapse_all = Signal()
 
-    _MIN_TALL = 210
+    _MIN_TALL = 300
     _SHORT = 64
 
     def __init__(self) -> None:
@@ -56,15 +103,32 @@ class DropZone(QFrame):
         self._layout.setContentsMargins(16, 12, 16, 12)
         self._layout.setSpacing(10)
 
-        self.headline = QLabel("Drop ROMs or a folder here")
-        self.headline.setProperty("role", "drop")
+        # Everything shown only while the queue is empty lives in its own
+        # container, so hiding it also removes its spacing. Loose spacers left
+        # behind pushed the buttons out of the compact strip.
+        self.intro = QWidget()
+        intro = QVBoxLayout(self.intro)
+        intro.setContentsMargins(0, 0, 0, 6)
+        intro.setSpacing(10)
+        self.icon = _DropIcon()
+        self.headline = QLabel("Drop your games here")
+        self.headline.setProperty("role", "hero")
         self.headline.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.hint = QLabel("Single files, whole folders, and zip or RAR downloads all work.")
+        self.hint.setProperty("role", "second")
+        self.hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.hint.setWordWrap(True)
+        intro.addWidget(self.icon, alignment=Qt.AlignmentFlag.AlignCenter)
+        intro.addWidget(self.headline)
+        intro.addWidget(self.hint)
 
         self.buttons = self._build_buttons()
+        self.steps = self._build_steps()
 
         self._layout.addStretch()
-        self._layout.addWidget(self.headline)
+        self._layout.addWidget(self.intro)
         self._layout.addWidget(self.buttons, alignment=Qt.AlignmentFlag.AlignCenter)
+        self._layout.addWidget(self.steps, alignment=Qt.AlignmentFlag.AlignCenter)
         self._layout.addStretch()
 
         self.set_compact(False)
@@ -74,16 +138,23 @@ class DropZone(QFrame):
         layout = QHBoxLayout(row)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(8)
-        for label, signal, tip in (
-            ("Add files", self.add_files, "Pick ROM files (Ctrl+O)"),
-            ("Add folder", self.add_folder, "Add a folder and everything in it (Ctrl+Shift+O)"),
+        self._icon_buttons: list[tuple[QPushButton, str]] = []
+        for label, signal, tip, subtle, icon_name in (
+            ("Add files", self.add_files, "Pick game files (Ctrl+O)", False, "add-file"),
+            ("Add folder", self.add_folder,
+             "Add a folder and every game in it (Ctrl+Shift+O)", False, "add-folder"),
             ("Import list", self.import_list,
-             "Load a list and match it against a ROMs folder (Ctrl+I)"),
+             "For advanced use: load a text list of games and find them in a ROMs "
+             "folder (Ctrl+I)", True, "list"),
         ):
             button = QPushButton(label)
             button.setToolTip(tip)
+            button.setProperty("subtle", subtle)
+            button.setIconSize(QSize(16, 16))
             button.clicked.connect(signal.emit)
+            self._icon_buttons.append((button, icon_name))
             layout.addWidget(button)
+        self.apply_icons()
         self._spacer = QWidget()
         self._spacer.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         layout.addWidget(self._spacer)
@@ -99,6 +170,30 @@ class DropZone(QFrame):
         layout.addWidget(self.collapse_button)
         return row
 
+    def apply_icons(self) -> None:
+        """Recolour the button icons for the current theme."""
+        for button, name in self._icon_buttons:
+            button.setIcon(icons.icon(name))
+
+    def _build_steps(self) -> QWidget:
+        row = QWidget()
+        layout = QHBoxLayout(row)
+        layout.setContentsMargins(0, 12, 0, 0)
+        layout.setSpacing(22)
+        for number, text in enumerate(STEPS, start=1):
+            pair = QHBoxLayout()
+            pair.setSpacing(8)
+            badge = QLabel(str(number))
+            badge.setProperty("role", "step")
+            badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            badge.setFixedSize(22, 22)
+            label = QLabel(text)
+            label.setProperty("role", "second")
+            pair.addWidget(badge)
+            pair.addWidget(label)
+            layout.addLayout(pair)
+        return row
+
     def set_compact(self, compact: bool) -> None:
         """Tall while the queue is empty, a strip once it is not."""
         if compact:
@@ -107,7 +202,8 @@ class DropZone(QFrame):
         else:
             self.setMinimumHeight(self._MIN_TALL)
             self.setMaximumHeight(16777215)
-        self.headline.setVisible(not compact)
+        for widget in (self.intro, self.steps):
+            widget.setVisible(not compact)
         self._spacer.setVisible(compact)
         self.expand_button.setVisible(compact)
         self.collapse_button.setVisible(compact)
@@ -122,6 +218,8 @@ class DropZone(QFrame):
 
     def _set_active(self, active: bool) -> None:
         self.setProperty("active", active)
+        self.icon.active = active
+        self.icon.update()
         theme.restyle(self)
 
     def dragEnterEvent(self, event: QDragEnterEvent) -> None:

@@ -33,6 +33,7 @@ import shutil
 from collections.abc import Callable
 from pathlib import Path
 
+from aynthor.core.converters.base import missing_tool
 from aynthor.core.system import app_data_dir, run_tool, tools_dir
 
 _HASH_CHUNK = 256 * 1024
@@ -99,7 +100,7 @@ def _stage_tools(dest: Path) -> None:
     for name in REQUIRED_TOOLS:
         src = tools / name
         if not src.is_file():
-            raise DecryptError(f"{name} not found. Download the 3DS Decryptor from Tools.")
+            raise DecryptError(missing_tool(f"{Path(name).stem} (3DS Decryptor)", tools))
         target = dest / name
         # Compared by content, not by size. This directory is a fixed,
         # user-writable path and the tools are executed from it, so a stale

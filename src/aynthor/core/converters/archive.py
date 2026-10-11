@@ -17,7 +17,13 @@ Reference
 
 from __future__ import annotations
 
-from aynthor.core.converters.base import BaseConverter, failure, is_decompress, place_file
+from aynthor.core.converters.base import (
+    BaseConverter,
+    failure,
+    is_decompress,
+    missing_tool,
+    place_file,
+)
 from aynthor.core.models import CompressionFormat, ConversionJob
 from aynthor.core.system import run_tool, tool_path
 
@@ -41,7 +47,7 @@ class SevenZipConverter(BaseConverter):
 
         seven_zip = tool_path("7za")
         if not seven_zip.is_file():
-            return False, f"7za not found in {seven_zip.parent}. Install it from Tools."
+            return False, missing_tool("7-Zip (7za)", seven_zip.parent)
 
         opts = job.options
 

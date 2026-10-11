@@ -48,6 +48,15 @@ def is_decompress(job: ConversionJob) -> bool:
     return job.options.get("mode") == ConversionMode.DECOMPRESS.value
 
 
+def missing_tool(name: str, folder: Path) -> str:
+    """What a converter reports when the program it drives is not there.
+
+    Every converter uses this one wording because `core.explain` recognises
+    it and offers the Tools window instead of a folder path.
+    """
+    return f"{name} is not installed (looked in {folder}). Open Tools to install it."
+
+
 def place_file(
     job: ConversionJob,
     on_progress: Callable[[int], None] | None = None,
@@ -60,7 +69,7 @@ def place_file(
     would just fail. With delete-source on, the runner turns this into a move.
 
     On Windows the folder cannot be created while a file of the same name
-    still sits there (`Game.chd` file → `Game.chd/` directory). That case
+    still sits there (a `Game.chd` file in the way of a `Game.chd/` directory). That case
     moves the file aside, creates the folder, then moves it in.
 
     `on_progress` is required for large Moves: unpacking a RAR ends at 99%,
@@ -99,7 +108,7 @@ def _fold_into_own_name(
     dst: Path,
     on_progress: Callable[[int], None] | None = None,
 ) -> tuple[bool, str]:
-    """`Game.chd` (file) → `Game.chd/Game.chd` on a filesystem that forbids
+    """Turn the file `Game.chd` into `Game.chd/Game.chd` on a filesystem that forbids
     creating a directory over an existing file of the same path."""
     aside = src.with_name(src.name + ".aynthor-placing")
     n = 0

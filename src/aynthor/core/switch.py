@@ -106,7 +106,7 @@ def _id_says_base(stem: str) -> bool:
 
 
 def _readable(name: str) -> str:
-    """`pack_dlc` / `v-ys_x` → words. Underscore is a word char; spaces are not."""
+    """Turn `pack_dlc` and `v-ys_x` into words. Underscore is a word char; spaces are not."""
     name = re.sub(r"[_\-]+", " ", name)
     name = re.sub(r"[\[\](){}]+", " ", name)
     return re.sub(r"\s+", " ", name).strip(" .-_")

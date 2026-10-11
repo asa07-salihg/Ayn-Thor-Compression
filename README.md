@@ -1,3 +1,5 @@
+<img src="docs/images/logo.png" alt="" width="96" align="right">
+
 # Ayn Thor Compression
 
 [![CI](https://github.com/asa07-salihg/Ayn-Thor-Compression/actions/workflows/ci.yml/badge.svg)](https://github.com/asa07-salihg/Ayn-Thor-Compression/actions/workflows/ci.yml)
@@ -27,6 +29,12 @@ The format for each file is worked out when it is added. Click the **Becomes**
 cell to change it, or right-click for the same list plus everything else a row
 can do. There is no mode to be in and nothing to select first: drop a folder in
 and press Start.
+
+The first time it opens, a short setup guide installs the converter programs,
+asks for your ROMs folder (on an SD card, a USB drive or this computer), and
+looks for Switch keys. Press Start and anything that would fail is listed
+first, with a button that fixes it. A row that fails anyway explains itself:
+click **Failed**.
 
 Light and dark follow the Windows setting, and the accent colour comes from
 yours:
@@ -94,7 +102,8 @@ form and the emulators that matter do not read anything smaller.
 ## Settings
 
 One settings window: a General page, a **Platform presets** page, and a page per
-format. Nothing in it has to be touched to use the app.
+format. Nothing in it has to be touched to use the app, and everything except
+General sits under **Advanced**.
 
 ![Platform presets](docs/images/ui-presets.png)
 
@@ -126,7 +135,8 @@ without any extra setup.
 
 ## Getting the tools
 
-The converters are not bundled with the repository. Open **Tools**, or run:
+The converters are not bundled with the repository. The setup guide installs
+them on first launch; after that, open **Tools**, or run:
 
 ```powershell
 python scripts/fetch_tools.py

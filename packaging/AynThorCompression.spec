@@ -57,7 +57,12 @@ for pattern in ("*.exe", "*.dll", "*.bin"):
             continue
         tool_files.append((str(path), "tools"))
 
-asset_files = [(str(p), "aynthor/ui/assets") for p in ASSETS.glob("*") if p.is_file()]
+# Subfolders keep their place (assets/icons/*.svg), because `ui.icons` looks
+# them up by that path inside the bundle.
+asset_files = [
+    (str(p), str(Path("aynthor/ui/assets") / p.parent.relative_to(ASSETS)))
+    for p in ASSETS.rglob("*") if p.is_file()
+]
 
 QT_EXCLUDES = [
     "PySide6.Qt3DAnimation",

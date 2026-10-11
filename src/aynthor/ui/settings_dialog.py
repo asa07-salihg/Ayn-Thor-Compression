@@ -46,6 +46,7 @@ from aynthor.ui.option_panels import FormatPanels, GeneralPanel
 from aynthor.ui.presets_page import PresetsPage
 
 _ROLE_FORMAT = Qt.ItemDataRole.UserRole
+_ROLE_PAGE = Qt.ItemDataRole.UserRole + 1
 
 
 class SettingsDialog(QDialog):
@@ -90,6 +91,14 @@ class SettingsDialog(QDialog):
         self.general.load(settings)
         self._add_page("General", None, self.general)
 
+        advanced = QListWidgetItem("Advanced (optional)")
+        advanced.setFlags(Qt.ItemFlag.NoItemFlags)
+        advanced.setToolTip("Nothing below has to be changed to use the app.")
+        font = advanced.font()
+        font.setBold(True)
+        advanced.setFont(font)
+        self.categories.addItem(advanced)
+
         self.presets_page = PresetsPage(presets)
         self.presets_page.changed.connect(self._on_presets_changed)
         self._add_page("Platform presets", None, self.presets_page)
@@ -100,7 +109,7 @@ class SettingsDialog(QDialog):
         for info in FORMAT_CATALOG:
             self._add_page(info.label, info.format, self.formats.panel(info.format))
 
-        self.categories.currentRowChanged.connect(self.pages.setCurrentIndex)
+        self.categories.currentRowChanged.connect(self._on_category)
         self.categories.setCurrentRow(0)
 
         buttons = QDialogButtonBox(
@@ -145,6 +154,20 @@ class SettingsDialog(QDialog):
     def _on_presets_changed(self) -> None:
         self.presets_touched = True
 
+    def _on_category(self, row: int) -> None:
+        """The Advanced heading is a row with no page behind it, so a row number
+        is not a page number."""
+        item = self.categories.item(row)
+        page = item.data(_ROLE_PAGE) if item is not None else None
+        if isinstance(page, int):
+            self.pages.setCurrentIndex(page)
+
+    def show_page(self, title: str) -> None:
+        for row in range(self.categories.count()):
+            if self.categories.item(row).text() == title:
+                self.categories.setCurrentRow(row)
+                return
+
     def _add_page(
         self,
         title: str,
@@ -158,6 +181,7 @@ class SettingsDialog(QDialog):
             info = format_info(fmt)
             item.setToolTip(f"{info.platform}\n\n{info.reason}")
             item.setData(_ROLE_FORMAT, fmt.value)
+        item.setData(_ROLE_PAGE, self.pages.count())
         self.categories.addItem(item)
 
         page = QWidget()

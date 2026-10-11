@@ -3,6 +3,43 @@
 Notable changes, newest first. Versions follow
 [semantic versioning](https://semver.org/).
 
+## 1.4.0
+
+Made for people who have never heard of CHD. Everything here is about getting
+a first batch of games converted without opening the log.
+
+- **A new look.** A new logo, line icons on every button, an empty window
+  that lays the job out in three steps, a progress bar in each row while it
+  converts, and a tick or a red Failed when it is done.
+- **A setup guide on first launch.** Install the converter programs, choose
+  your ROMs folder (on an SD card, a USB drive or this computer) or keep the
+  results next to the originals, and point at `prod.keys` if you have Switch
+  games. Every step can be skipped, and More > Setup guide opens it again.
+- **Start checks first.** Missing programs, a missing `prod.keys`, and files
+  whose console isn't known (which would land next to the original instead
+  of in the ROMs folder) are listed before anything runs, each with a fix or
+  a way to leave those files out. Skipped rows say "Skipped" and stay queued.
+- **Failures explain themselves.** Click "Failed", or right-click and pick
+  "What went wrong?", for a plain explanation and a button that fixes it:
+  open Tools, choose the keys, open the folder, or get 7-Zip. The converter's
+  own text is under "Show technical details".
+- **A summary when a batch ends:** how many games finished, how much space
+  was saved, what failed, and a button that opens the folder. The taskbar
+  button flashes if the window is behind something else.
+- **Plainer words everywhere.** The bottom bar says where games will go and
+  counts the files that could not be added. Rows read Ready, Working... and
+  Done. A file with no known console says Choose... in the Platform column,
+  and every column header and Becomes cell explains itself on hover.
+- **Tools and Settings are easier to read.** Tools lists each program as
+  Ready, Not installed or Needs update, with what it is for; versions and
+  licences are behind "Show details". Settings puts the ROMs folder first and
+  files the format pages under "Advanced (optional)".
+- Every converter reports a missing program in the same words, so the
+  explanation can always point at Tools.
+- The file sizes and savings in the queue were drawn in a tiny font. They are
+  readable now.
+- Running the UI tests on Windows no longer wipes the app's saved settings.
+
 ## 1.3.3
 
 - **Part is clickable.** Base, Update and DLC are guessed from the filename
@@ -97,7 +134,7 @@ test now.
   copy into the game folder reports its own progress instead of freezing the
   bar until a silent 14 GB copy ends.
 - **Move from zip/rar writes once.** The member goes straight into the game
-  folder — no sibling `.aynthor-unpack-*` full of a second copy.
+  folder, with no sibling `.aynthor-unpack-*` holding a second copy.
 - **Each game can go in a folder named like its primary file.** Settings >
   General has "Put each game in its own folder", which writes
   `psx/Final Fantasy VIII.chd/Final Fantasy VIII.chd` (extra discs, updates and
@@ -140,14 +177,14 @@ test now.
   inside is queued (an NSP becomes NSZ), and the archive is unpacked at
   run time. The ROM inside can be any recognised dump, not only NSP.
 - **RAR/ZIP members unpack even when folder names disagree.** After peek, the
-  row is the ROM inside — use Move or convert to NSZ, not a separate Unzip.
+  row is the ROM inside. Use Move or convert to NSZ, not a separate Unzip.
   Extraction finds the file by exact path, basename, or fuzzy name (spaces vs
   underscores) when 7-Zip’s listing and the folder Windows wrote differ.
 - **Join files to a game folder already on the card.** When a destination
   ROMs folder is set and a matching game folder exists, adding a file asks
   whether to put it there. The queue shows files already on the card as
   “Already on card” (not converted). Drag one game tree onto another to
-  merge (target name kept). Right-click a game folder → Rename edits the
+  merge (target name kept). Right-click a game folder and pick Rename to edit the
   stem and renames the folder on disk too. Matching is by title header
   across every platform; not by words like dlc/update.
 - **Switch: one base title, one tree.** After a base is known, every file

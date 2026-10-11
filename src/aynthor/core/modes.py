@@ -11,7 +11,7 @@ Why
     entry, so nothing offers a reverse that does not exist.
 
     A RAR/ZIP that was peeked into an NSZ row still offers Unzip (extract the
-    member, do not compress), not Decompress — that word is for containers.
+    member, do not compress), not Decompress. That word is for containers.
 
 Used by
     `ui.queue_view` (the Becomes cell and its menu),

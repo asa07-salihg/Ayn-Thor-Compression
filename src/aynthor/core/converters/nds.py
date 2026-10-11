@@ -21,7 +21,7 @@ from __future__ import annotations
 import shutil
 from contextlib import suppress
 
-from aynthor.core.converters.base import BaseConverter, failure
+from aynthor.core.converters.base import BaseConverter, failure, missing_tool
 from aynthor.core.models import CompressionFormat, ConversionJob
 from aynthor.core.system import run_tool, tool_path
 
@@ -36,7 +36,7 @@ class NdsTrimConverter(BaseConverter):
 
         ndstrim = tool_path("ndstrim")
         if not ndstrim.is_file():
-            return False, f"ndstrim not found in {ndstrim.parent}. Install it from Tools."
+            return False, missing_tool("ndstrim", ndstrim.parent)
 
         target = job.output_path
         if target.resolve() != job.input_path.resolve():

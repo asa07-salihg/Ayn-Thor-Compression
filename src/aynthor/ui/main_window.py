@@ -24,7 +24,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QUrl
+from PySide6.QtCore import QSize, Qt, QTimer, QUrl
 from PySide6.QtGui import QAction, QActionGroup, QDesktopServices, QKeySequence
 from PySide6.QtWidgets import (
     QApplication,
@@ -45,42 +45,52 @@ from PySide6.QtWidgets import (
 
 from aynthor import CHANGELOG_URL, __version__
 from aynthor.core.esde import audit_folders, resolve_roms_root
+from aynthor.core.explain import Fix, explain_failure
 from aynthor.core.formats import file_dialog_filter, format_info, known_extensions
 from aynthor.core.groups import discover_folders
 from aynthor.core.intake import folder_label
 from aynthor.core.jobs import build_jobs
-from aynthor.core.models import CompressionFormat, ConversionJob
+from aynthor.core.models import CompressionFormat, ConversionJob, QueueItem
+from aynthor.core.preflight import Problem, check_queue, missing_programs
 from aynthor.core.presets import PRESETS
 from aynthor.core.romlist import entries_to_queue, parse_list_file, summarize_list
 from aynthor.core.settings import FormatSettings
 from aynthor.core.switch import ContentType, content_warnings, summarize_group
 from aynthor.core.system import find_prod_keys
 from aynthor.core.tools.manager import ToolsManager
+from aynthor.core.tools.manifest import SPECS_BY_KEY
 from aynthor.core.unpack import rom_files
-from aynthor.ui import state, theme
+from aynthor.ui import icons, state, theme
 from aynthor.ui.about_dialog import AboutDialog
 from aynthor.ui.drop_zone import DropZone
+from aynthor.ui.failure_dialog import FailureDialog
+from aynthor.ui.finish_dialog import FinishDialog
 from aynthor.ui.job_runner import JobRunner
-from aynthor.ui.queue_view import QueueTable, human_size
+from aynthor.ui.preflight_dialog import PreflightDialog
+from aynthor.ui.queue_view import (
+    STATUS_DONE,
+    STATUS_FAILED,
+    STATUS_SKIPPED,
+    STATUS_WORKING,
+    QueueTable,
+    human_size,
+)
 from aynthor.ui.settings_dialog import SettingsDialog
 from aynthor.ui.theme import Mode
 from aynthor.ui.tools_dialog import ToolsDialog
 from aynthor.ui.update_check import UpdateCheck
+from aynthor.ui.welcome_dialog import WelcomeDialog
 
 # List tokens that mean "leave this alone", not "no format chosen".
 _NOT_CONVERTED = {"-", "Z64"}
 
-# Which manifest entry a format needs before it can run.
-_REQUIRED_TOOL = {
-    CompressionFormat.CHD: "chdman",
-    CompressionFormat.RVZ: "DolphinTool",
-    CompressionFormat.CSO: "maxcso",
-    CompressionFormat.NDS_TRIM: "ndstrim",
-    CompressionFormat.NSZ: "nsz",
-    CompressionFormat.SEVEN_ZIP: "7z",
-    CompressionFormat.WUA: "rom-converto",
-    CompressionFormat.DEC_3DS: "3ds-decryptor",
-}
+
+def _existing_folder(path: Path) -> Path | None:
+    """The nearest folder that exists, so Open folder never opens nothing."""
+    for candidate in (path, *path.parents):
+        if candidate.is_dir():
+            return candidate
+    return None
 
 
 class MainWindow(QMainWindow):
@@ -100,6 +110,13 @@ class MainWindow(QMainWindow):
         self._total = 0
         self._current_percent = 0
         self._saved_bytes = 0
+        self._ok_count = 0
+        self._failed_count = 0
+        self._skipped_count = 0
+        self._cancelled = False
+        self._last_output: Path | None = None
+        self._finish_dialog: FinishDialog | None = None
+        self._icon_buttons: list[tuple[QPushButton, str, str]] = []
         self._update_check = UpdateCheck(self)
 
         self._build()
@@ -148,26 +165,33 @@ class MainWindow(QMainWindow):
         row.setContentsMargins(14, 10, 10, 10)
         row.setSpacing(8)
 
+        self.logo = QLabel()
+        self.logo.setPixmap(icons.logo(40, self.devicePixelRatioF()))
+        row.addWidget(self.logo)
+        row.addSpacing(4)
+
         title_column = QVBoxLayout()
         title_column.setSpacing(1)
         title = QLabel("Ayn Thor Compression")
         title.setProperty("role", "title")
-        subtitle = QLabel("CHD, RVZ, CSO, ZCCI, NSZ, 7z, WUA")
+        subtitle = QLabel("Shrink your games and put them where your handheld looks for them")
         subtitle.setProperty("role", "subtitle")
         title_column.addWidget(title)
         title_column.addWidget(subtitle)
         row.addLayout(title_column)
         row.addStretch()
 
-        for label, slot, tip in (
+        for label, slot, tip, icon_name in (
             ("Settings", self._show_settings,
-             "Output folder, and options for each format (Ctrl+,)"),
-            ("Tools", self._show_tools, "Check and install the converter programs (Ctrl+T)"),
+             "Where finished games go, and advanced options (Ctrl+,)", "settings"),
+            ("Tools", self._show_tools,
+             "The free programs that do the converting (Ctrl+T)", "package"),
         ):
             button = QPushButton(label)
             button.setProperty("subtle", True)
             button.setToolTip(tip)
             button.clicked.connect(slot)
+            self._with_icon(button, icon_name)
             row.addWidget(button)
 
         self.more_button = QPushButton("More")
@@ -179,6 +203,12 @@ class MainWindow(QMainWindow):
 
     def _build_more_menu(self) -> QMenu:
         menu = QMenu(self)
+
+        guide = QAction("Setup guide...", self)
+        guide.setToolTip("Install the programs, choose where games go, find Switch keys.")
+        guide.triggered.connect(self.show_welcome)
+        menu.addAction(guide)
+        menu.addSeparator()
 
         appearance = menu.addMenu("Appearance")
         group = QActionGroup(self)
@@ -225,6 +255,7 @@ class MainWindow(QMainWindow):
         self.queue = QueueTable()
         self.queue.queue_changed.connect(self._on_queue_changed)
         self.queue.settings_requested.connect(self._show_settings)
+        self.queue.failure_clicked.connect(self._explain_failure)
         layout.addWidget(self.queue)
         return card
 
@@ -248,6 +279,21 @@ class MainWindow(QMainWindow):
         self.summary_label.setProperty("role", "second")
         row.addWidget(self.summary_label)
 
+        self.skipped_button = QPushButton()
+        self.skipped_button.setProperty("subtle", True)
+        self.skipped_button.setToolTip("Some files were not added. Click to see why.")
+        self.skipped_button.clicked.connect(lambda: self.log_button.setChecked(True))
+        self._with_icon(self.skipped_button, "alert", "warn")
+        self.skipped_button.hide()
+        row.addWidget(self.skipped_button)
+
+        self.destination_button = QPushButton()
+        self.destination_button.setProperty("subtle", True)
+        self.destination_button.setToolTip("Where finished games go. Click to change it.")
+        self.destination_button.clicked.connect(lambda: self._show_settings())
+        self._with_icon(self.destination_button, "folder")
+        row.addWidget(self.destination_button)
+
         self.progress = QProgressBar()
         self.progress.setRange(0, 100)
         self.progress.setFixedWidth(190)
@@ -259,16 +305,20 @@ class MainWindow(QMainWindow):
         self.log_button.setProperty("subtle", True)
         self.log_button.setCheckable(True)
         self.log_button.setToolTip("Show what the converters are printing (Ctrl+L)")
+        self._with_icon(self.log_button, "log")
         self.log_button.toggled.connect(self._toggle_log)
         row.addWidget(self.log_button)
 
         self.clear_button = QPushButton("Clear queue")
         self.clear_button.setProperty("subtle", True)
         self.clear_button.clicked.connect(self.queue.clear_queue)
+        self.clear_button.clicked.connect(self.skipped_button.hide)
+        self._with_icon(self.clear_button, "trash")
         row.addWidget(self.clear_button)
 
         self.cancel_button = QPushButton("Cancel")
         self.cancel_button.clicked.connect(self._cancel)
+        self._with_icon(self.cancel_button, "stop")
         self.cancel_button.hide()
         row.addWidget(self.cancel_button)
 
@@ -276,6 +326,7 @@ class MainWindow(QMainWindow):
         self.start_button.setProperty("accent", True)
         self.start_button.setEnabled(False)
         self.start_button.clicked.connect(self._start)
+        self._with_icon(self.start_button, "play", "accentText")
         row.addWidget(self.start_button)
         return bar
 
@@ -328,6 +379,19 @@ class MainWindow(QMainWindow):
         self._refresh_summary()
         self._refresh_tool_warning()
 
+    def maybe_show_welcome(self) -> None:
+        """Open the setup guide once, after the window is on screen."""
+        if not state.welcome_done():
+            QTimer.singleShot(0, self.show_welcome)
+
+    def show_welcome(self) -> None:
+        WelcomeDialog(self.settings, self.tools, self).exec()
+        state.save(self.settings, self.saveGeometry())
+        self.tools.refresh()
+        self.queue.apply_settings(self.settings)
+        self._refresh_summary()
+        self._refresh_tool_warning()
+
     def closeEvent(self, event) -> None:
         if self._runner is not None and self._runner.isRunning():
             answer = QMessageBox.question(
@@ -361,7 +425,9 @@ class MainWindow(QMainWindow):
         self.queue_card.setVisible(populated)
 
         parts: list[str] = []
-        if count:
+        if running and self._total:
+            parts.append(f"Working on {min(self._done + 1, self._total)} of {self._total}")
+        elif count:
             parts.append(f"{count} file{'s' if count != 1 else ''}")
             parts.append(human_size(self.queue.total_input_bytes()))
         if self._saved_bytes > 0:
@@ -370,33 +436,35 @@ class MainWindow(QMainWindow):
 
         self.start_button.setEnabled(count > 0 and not running)
         self.clear_button.setEnabled(populated and not running)
+        self._refresh_destination()
+
+    def _refresh_destination(self) -> None:
+        """Say where finished games will go, all the time, not only in Settings."""
+        if self.settings.esde_root:
+            where = str(resolve_roms_root(Path(self.settings.esde_root)))
+        elif self.settings.output_dir:
+            where = self.settings.output_dir
+        else:
+            self.destination_button.setText("Saving next to the original files")
+            return
+        metrics = self.destination_button.fontMetrics()
+        shown = metrics.elidedText(where, Qt.TextElideMode.ElideMiddle, 320)
+        self.destination_button.setText(f"Saving to {shown}")
 
     def _refresh_tool_warning(self) -> None:
-        """Which formats in the queue need something that is not installed.
+        """Which programs the queue needs that are not installed.
 
         Kept off the per-job path: it walks every row and probes the filesystem
-        for each format, and nothing it depends on changes while a batch runs.
+        for each program, and nothing it depends on changes while a batch runs.
         """
-        missing = {
-            format_info(fmt).tool
-            for fmt in self.queue.formats_in_queue()
-            if self._tool_is_missing(fmt) and format_info(fmt)
-        }
+        missing = missing_programs(self.queue.queue_items(), self.tools.is_available)
         if not missing:
             self.start_button.setToolTip("Convert everything in the queue (Ctrl+Enter)")
             return
-        names = ", ".join(sorted(missing))
+        names = ", ".join(sorted(
+            SPECS_BY_KEY[key].label if key in SPECS_BY_KEY else key for key in missing))
         self.start_button.setToolTip(
-            f"Not installed yet: {names}. Open Tools to install them.")
-
-    def _tool_is_missing(self, fmt: CompressionFormat) -> bool:
-        if fmt == CompressionFormat.Z3DS:
-            # Opening falls back to the built-in decoder, and compressing is
-            # happy with either 3DS engine.
-            return not (self.tools.is_available("rom-converto")
-                        or self.tools.is_available("z3ds_compress"))
-        key = _REQUIRED_TOOL.get(fmt)
-        return bool(key) and not self.tools.is_available(key)
+            f"Not installed yet: {names}. Press Start and the app offers to install them.")
 
     def _pick_files(self) -> None:
         paths, _ = QFileDialog.getOpenFileNames(
@@ -428,6 +496,9 @@ class MainWindow(QMainWindow):
                 files.append(path)
 
         added, skipped = self.queue.add_paths(files, self.settings, labels)
+        self.skipped_button.setText(
+            f"{len(skipped)} skipped" if skipped else "")
+        self.skipped_button.setVisible(bool(skipped))
         pruned = self.queue.apply_empty_folder_setting()
         folders_added = max(0, folders_added - pruned)
         if added:
@@ -536,28 +607,34 @@ class MainWindow(QMainWindow):
         if self.queue.rowCount() == 0 or not self.start_button.isEnabled():
             return
 
-        jobs = build_jobs(self.queue.queue_items(), self.settings)
+        queue = self.queue.queue_items()
+        skipped = self._preflight(queue)
+        if skipped is None:
+            return
+        for row in skipped:
+            self.queue.update_status(row, STATUS_SKIPPED, "Left out of this run.")
+
+        jobs = build_jobs([(row, item) for row, item in queue if row not in skipped],
+                          self.settings)
         if not jobs:
             self.log_button.setChecked(True)
-            self._log("Nothing to do: every output already exists, and 'If the output "
-                      "exists' is set to Skip. Change it in Settings to run them anyway.")
+            if skipped:
+                self._log("Nothing left to run: every file was skipped.")
+            else:
+                self._log("Nothing to do: every file is already there, and 'If the file "
+                          "is already there' is set to Skip. Change it in Settings to "
+                          "run them anyway.")
             return
-
-        if self.settings.delete_source:
-            confirm = QMessageBox.warning(
-                self, "Delete sources",
-                f"'Delete the source after converting' is on.\n\n"
-                f"{len(jobs)} original file(s) will be removed once they convert "
-                f"successfully.\n\nContinue?",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                QMessageBox.StandardButton.No)
-            if confirm != QMessageBox.StandardButton.Yes:
-                return
 
         self._done = 0
         self._total = len(jobs)
         self._current_percent = 0
         self._saved_bytes = 0
+        self._ok_count = 0
+        self._failed_count = 0
+        self._skipped_count = len(skipped)
+        self._cancelled = False
+        self._last_output = None
 
         self.progress.setValue(0)
         self.progress.show()
@@ -572,16 +649,47 @@ class MainWindow(QMainWindow):
         self._runner.job_finished.connect(self._on_job_finished)
         self._runner.finished.connect(self._on_all_finished)
         self._runner.start()
+        self._refresh_summary()
+
+    def _preflight(self, queue: list[tuple[int, QueueItem]]) -> set[int] | None:
+        """Rows to leave out of this run, or None when the user cancelled."""
+        problems = check_queue(queue, self.settings, is_available=self.tools.is_available)
+        if not problems and not self.settings.delete_source:
+            return set()
+        dialog = PreflightDialog(problems, self.settings, self._recheck,
+                                 use_keys=self._use_keys,
+                                 deletes_sources=self.settings.delete_source, parent=self)
+        accepted = dialog.exec() == QDialog.DialogCode.Accepted
+        self.tools.refresh()
+        self._refresh_tool_warning()
+        return dialog.skipped_rows() if accepted else None
+
+    def _recheck(self) -> list[Problem]:
+        self.tools.refresh()
+        return check_queue(self.queue.queue_items(), self.settings,
+                           is_available=self.tools.is_available)
+
+    def _use_keys(self, path: Path) -> None:
+        """Point every Switch row, and every one added later, at this prod.keys.
+
+        Rows carry the NSZ page's own `keys_path`, which wins over the general
+        setting, so changing only the general one left a stale path in place.
+        """
+        self.settings.keys_path = str(path)
+        self.settings.options.setdefault(CompressionFormat.NSZ, {})["keys_path"] = str(path)
+        self.queue.apply_format_options(CompressionFormat.NSZ, {"keys_path": str(path)})
+        self._log(f"Switch keys: using the file in {path.parent.name or path.parent}")
 
     def _cancel(self) -> None:
         if self._runner is not None and self._runner.isRunning():
+            self._cancelled = True
             self._runner.cancel()
             self.cancel_button.setEnabled(False)
             self.cancel_button.setText("Stopping")
 
     def _on_job_started(self, row: int) -> None:
         self._current_percent = 0
-        self.queue.update_status(row, "Running")
+        self.queue.update_status(row, STATUS_WORKING)
         node = self.queue.file_at(row)
         if node is not None:
             self.queue.scrollToItem(node)
@@ -595,12 +703,15 @@ class MainWindow(QMainWindow):
         self._done += 1
         self._current_percent = 0
         self._update_progress()
-        self.queue.update_status(row, "Done" if ok else "Failed", message)
+        self.queue.update_status(row, STATUS_DONE if ok else STATUS_FAILED, message)
         if ok:
+            self._ok_count += 1
+            self._last_output = job.output_path
             self.queue.record_result(row, job.input_size, job.output_size)
             if job.output_size:
                 self._saved_bytes += job.input_size - job.output_size
         else:
+            self._failed_count += 1
             # A failure is the one thing worth interrupting for.
             self.log_button.setChecked(True)
         self._log(f"{'OK' if ok else 'FAILED'}  {job.input_path.name}: {message}")
@@ -622,6 +733,70 @@ class MainWindow(QMainWindow):
             self._log(f"Finished. Total saved: {human_size(self._saved_bytes)}")
         else:
             self._log("Finished.")
+        if not self._cancelled:
+            # Flashes the taskbar button when the window is behind something
+            # else; a long batch is exactly when people switch away.
+            QApplication.alert(self)
+            self._show_finish()
+
+    def _show_finish(self) -> None:
+        dialog = FinishDialog(
+            self._ok_count, self._failed_count, self._skipped_count,
+            max(0, self._saved_bytes), self._results_folder(), self)
+        dialog.finished.connect(lambda _code, d=dialog: self._after_finish(d))
+        self._finish_dialog = dialog
+        dialog.open()
+
+    def _after_finish(self, dialog: FinishDialog) -> None:
+        if dialog.choice == FinishDialog.OPEN_FOLDER:
+            self._open_folder(self._results_folder())
+        elif dialog.choice == FinishDialog.SHOW_FAILURES:
+            failed = self.queue.failed_ids()
+            node = self.queue.file_at(failed[0]) if failed else None
+            if node is not None:
+                self.queue.scrollToItem(node)
+                self.queue.setCurrentItem(node)
+                self._explain_failure(failed[0])
+
+    def _results_folder(self) -> Path | None:
+        """The folder a user would open to find what this run wrote."""
+        if self.settings.esde_root:
+            return resolve_roms_root(Path(self.settings.esde_root))
+        if self.settings.output_dir:
+            return Path(self.settings.output_dir)
+        if self._last_output is not None:
+            return _existing_folder(self._last_output.parent)
+        return None
+
+    @staticmethod
+    def _open_folder(folder: Path | None) -> None:
+        if folder is not None:
+            QDesktopServices.openUrl(QUrl.fromLocalFile(str(folder)))
+
+    def _explain_failure(self, item_id: int) -> None:
+        message = self.queue.failure_message(item_id)
+        if message is None:
+            return
+        node = self.queue.file_at(item_id)
+        name = node.text(self.queue.COL_FILE) if node is not None else ""
+        dialog = FailureDialog(name, explain_failure(message), self)
+        dialog.exec()
+        self._apply_fix(dialog.chosen_fix, item_id)
+
+    def _apply_fix(self, fix: Fix | None, item_id: int) -> None:
+        if fix is Fix.OPEN_TOOLS:
+            self._show_tools()
+        elif fix is Fix.CHOOSE_KEYS:
+            path, _ = QFileDialog.getOpenFileName(
+                self, "Choose prod.keys", "", "Switch keys (*.keys);;All files (*)")
+            if path:
+                self._use_keys(Path(path))
+        elif fix is Fix.OPEN_FOLDER:
+            output = self.queue.output_of(item_id)
+            self._open_folder(
+                _existing_folder(output.parent) if output else self._results_folder())
+        elif fix is Fix.GET_7ZIP:
+            QDesktopServices.openUrl(QUrl("https://www.7-zip.org/"))
 
     # -------------------------------------------------------------------- misc
 
@@ -664,7 +839,19 @@ class MainWindow(QMainWindow):
             return
         theme.apply_theme(app, mode)
         self.queue.refresh_colours()
+        self._apply_icons()
         state.save_mode(mode)
+
+    def _with_icon(self, button: QPushButton, name: str, colour: str = "text") -> None:
+        """Give a button its icon, and remember it so a theme change recolours it."""
+        self._icon_buttons.append((button, name, colour))
+        button.setIcon(icons.icon(name, colour))
+        button.setIconSize(QSize(16, 16))
+
+    def _apply_icons(self) -> None:
+        for button, name, colour in self._icon_buttons:
+            button.setIcon(icons.icon(name, colour))
+        self.drop_zone.apply_icons()
 
     def _log(self, text: str) -> None:
         self.log_view.appendPlainText(text)

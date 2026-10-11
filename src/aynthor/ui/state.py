@@ -39,7 +39,13 @@ APPLICATION = "AynThorCompression"
 
 
 def _store() -> QSettings:
-    return QSettings(ORGANISATION, APPLICATION)
+    # The format is passed explicitly. `QSettings(organisation, application)`
+    # always means the registry on Windows and ignores setDefaultFormat, so the
+    # test suite's scratch settings never took effect there: every UI test run
+    # cleared the developer's real settings. In the app the default format is
+    # the native one, so this is still the same registry key as before.
+    return QSettings(QSettings.defaultFormat(), QSettings.Scope.UserScope,
+                     ORGANISATION, APPLICATION)
 
 
 def load_mode() -> Mode:
@@ -52,6 +58,16 @@ def load_mode() -> Mode:
 
 def save_mode(mode: Mode) -> None:
     _store().setValue("ui/theme", mode.value)
+
+
+def welcome_done() -> bool:
+    """Whether the setup guide has been finished or skipped once."""
+    raw = _store().value("ui/welcome_done", False)
+    return raw if isinstance(raw, bool) else str(raw).lower() == "true"
+
+
+def save_welcome_done() -> None:
+    _store().setValue("ui/welcome_done", True)
 
 
 def restore_geometry() -> QByteArray | None:

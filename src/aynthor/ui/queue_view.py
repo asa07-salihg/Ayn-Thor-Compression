@@ -24,8 +24,16 @@ from __future__ import annotations
 from pathlib import Path
 from typing import ClassVar
 
-from PySide6.QtCore import QModelIndex, QPoint, QRect, Qt, Signal
-from PySide6.QtGui import QAction, QBrush, QFont, QMouseEvent, QPainter, QPen
+from PySide6.QtCore import QModelIndex, QPoint, QPointF, QRect, QRectF, Qt, Signal
+from PySide6.QtGui import (
+    QAction,
+    QBrush,
+    QFont,
+    QMouseEvent,
+    QPainter,
+    QPainterPath,
+    QPen,
+)
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QFrame,
@@ -46,7 +54,8 @@ from aynthor.core.esde import (
     PLATFORM_LABELS,
     PLATFORM_MENU_GROUPS,
 )
-from aynthor.core.formats import FORMAT_CATALOG, format_info, natural_mode
+from aynthor.core.explain import explain_failure
+from aynthor.core.formats import FORMAT_CATALOG, FormatInfo, format_info, natural_mode
 from aynthor.core.groups import (
     assign_to_folder,
     best_disk_game_folder,
@@ -105,10 +114,18 @@ _ROLE_FOLDER_KIND = Qt.ItemDataRole.UserRole + 10
 _ROLE_FOLDER_KEY = Qt.ItemDataRole.UserRole + 11
 _ROLE_TITLE_FAMILY = Qt.ItemDataRole.UserRole + 12
 _ROLE_DISK_ANCHOR = Qt.ItemDataRole.UserRole + 13
+_ROLE_FAILURE = Qt.ItemDataRole.UserRole + 14
 
 _KIND_FILE = "file"
 _KIND_FOLDER = "folder"
-_STATUS_ON_CARD = "Already on card"
+
+STATUS_READY = "Ready"
+STATUS_WORKING = "Working..."
+STATUS_DONE = "Done"
+STATUS_FAILED = "Failed"
+STATUS_SKIPPED = "Skipped"
+_STATUS_ON_CARD = "Already there"
+_PLATFORM_UNKNOWN = "Choose..."
 
 _NAMED_BY_OUTPUT = frozenset({
     CompressionFormat.Z3DS,
@@ -175,6 +192,90 @@ class _BecomesDelegate(QStyledItemDelegate):
         return hint
 
 
+def status_kind(text: str) -> tuple[str, int]:
+    """How a Status cell is drawn: `progress` with a percentage, or `done`,
+    `failed`, `working` or `plain` with 0."""
+    if text.endswith("%") and text[:-1].isdigit():
+        return "progress", max(0, min(100, int(text[:-1])))
+    if text == STATUS_DONE:
+        return "done", 0
+    if text == STATUS_FAILED:
+        return "failed", 0
+    if text == STATUS_WORKING:
+        return "working", 0
+    return "plain", 0
+
+
+class _StatusDelegate(QStyledItemDelegate):
+    """A bar while a file converts, a tick when it is done, and a Failed that
+    looks like something you can click, because it is."""
+
+    def paint(self, painter: QPainter, option: QStyleOptionViewItem,
+              index: QModelIndex) -> None:
+        kind, percent = status_kind(index.data(Qt.ItemDataRole.DisplayRole) or "")
+        if kind == "plain":
+            super().paint(painter, option, index)
+            return
+        opt = QStyleOptionViewItem(option)
+        self.initStyleOption(opt, index)
+        opt.text = ""
+        style = opt.widget.style() if opt.widget is not None else None
+        if style is not None:
+            style.drawControl(QStyle.ControlElement.CE_ItemViewItem, opt, painter, opt.widget)
+
+        painter.save()
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        area = QRectF(opt.rect).adjusted(6, 0, -8, 0)
+        middle = area.center().y()
+        if kind == "progress":
+            label_width = 38.0
+            track = QRectF(area.left(), middle - 3, max(10.0, area.width() - label_width), 6)
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(theme.color("subtleHover"))
+            painter.drawRoundedRect(track, 3, 3)
+            filled = QRectF(track)
+            filled.setWidth(track.width() * percent / 100)
+            painter.setBrush(theme.color("accent"))
+            painter.drawRoundedRect(filled, 3, 3)
+            painter.setPen(theme.color("textSecond"))
+            painter.drawText(
+                QRectF(track.right(), area.top(), area.right() - track.right(), area.height()),
+                Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter, f"{percent}%")
+        elif kind == "working":
+            painter.setPen(theme.color("accent"))
+            painter.drawText(area, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
+                             STATUS_WORKING)
+        else:
+            done = kind == "done"
+            colour = theme.color("ok" if done else "error")
+            icon = QRectF(area.left(), middle - 7, 14, 14)
+            pen = QPen(colour, 1.8)
+            pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+            pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+            painter.setPen(pen)
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            if done:
+                tick = QPainterPath()
+                tick.moveTo(icon.left() + 2, middle)
+                tick.lineTo(icon.left() + 5.5, middle + 3.5)
+                tick.lineTo(icon.right() - 1, middle - 4)
+                painter.drawPath(tick)
+            else:
+                painter.drawEllipse(icon)
+                painter.drawLine(QPointF(icon.center().x(), icon.top() + 3.5),
+                                 QPointF(icon.center().x(), middle + 1))
+                painter.drawPoint(QPointF(icon.center().x(), icon.bottom() - 3.2))
+            font = QFont(opt.font)
+            font.setUnderline(not done)
+            painter.setFont(font)
+            painter.setPen(colour)
+            painter.drawText(
+                area.adjusted(icon.width() + 6, 0, 0, 0),
+                Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
+                STATUS_DONE if done else STATUS_FAILED)
+        painter.restore()
+
+
 class _ColumnView:
     """One column of a tree item, with the QTableWidgetItem methods the tests use."""
 
@@ -204,6 +305,7 @@ class _ColumnView:
 class QueueTable(QTreeWidget):
     queue_changed = Signal()
     settings_requested = Signal(object)
+    failure_clicked = Signal(int)
 
     (COL_FILE, COL_GAME, COL_TYPE, COL_PLATFORM,
      COL_BECOMES, COL_SIZE, COL_SAVED, COL_STATUS) = range(8)
@@ -212,8 +314,17 @@ class QueueTable(QTreeWidget):
     _CLICKABLE = (COL_TYPE, COL_PLATFORM, COL_BECOMES)
 
     _STATUS_COLOURS: ClassVar[dict[str, str]] = {
-        "Done": "ok", "Failed": "error", "Waiting": "textThird",
-        "Already on card": "textThird",
+        STATUS_DONE: "ok", STATUS_FAILED: "error", STATUS_READY: "textThird",
+        STATUS_SKIPPED: "textThird", _STATUS_ON_CARD: "textThird",
+    }
+    _HEADER_TIPS: ClassVar[dict[int, str]] = {
+        COL_FILE: "The game file you added.",
+        COL_TYPE: "Switch only: base game, update or DLC. Click a cell to change it.",
+        COL_PLATFORM: "Which console the game is for. Click a cell if it's wrong.",
+        COL_BECOMES: "What the file will be turned into. Click a cell to pick something else.",
+        COL_SIZE: "How big the file is now.",
+        COL_SAVED: "How much smaller the result is, once it's done.",
+        COL_STATUS: "Ready, working, done or failed. Click Failed to see why.",
     }
     # Options that say something about the *file*, not about the format it is
     # being converted to, and so survive a format or platform change.
@@ -251,6 +362,7 @@ class QueueTable(QTreeWidget):
 
         for column in self._CLICKABLE:
             self.setItemDelegateForColumn(column, _BecomesDelegate(self))
+        self.setItemDelegateForColumn(self.COL_STATUS, _StatusDelegate(self))
         self.setMouseTracking(True)
         self.itemClicked.connect(self._on_item_clicked)
 
@@ -262,11 +374,11 @@ class QueueTable(QTreeWidget):
             (self.COL_FILE, QHeaderView.ResizeMode.Stretch, 0),
             (self.COL_GAME, QHeaderView.ResizeMode.Interactive, 150),
             (self.COL_TYPE, QHeaderView.ResizeMode.ResizeToContents, 0),
-            (self.COL_PLATFORM, QHeaderView.ResizeMode.Interactive, 130),
+            (self.COL_PLATFORM, QHeaderView.ResizeMode.Interactive, 160),
             (self.COL_BECOMES, QHeaderView.ResizeMode.Interactive, 130),
             (self.COL_SIZE, QHeaderView.ResizeMode.Interactive, 84),
             (self.COL_SAVED, QHeaderView.ResizeMode.Interactive, 76),
-            (self.COL_STATUS, QHeaderView.ResizeMode.Interactive, 92),
+            (self.COL_STATUS, QHeaderView.ResizeMode.Interactive, 124),
         ):
             header.setSectionResizeMode(column, mode)
             if width:
@@ -276,9 +388,13 @@ class QueueTable(QTreeWidget):
                 column,
                 (Qt.AlignmentFlag.AlignRight if column in self._NUMERIC
                  else Qt.AlignmentFlag.AlignLeft) | Qt.AlignmentFlag.AlignVCenter)
+        for column, tip in self._HEADER_TIPS.items():
+            self.headerItem().setToolTip(column, tip)
 
+        # In pixels: the stylesheet sizes text in px, so the widget's point
+        # size reads as -1 and anything derived from it fell to the 8 pt floor.
         self._mono = QFont(theme.MONO.split(",")[0].strip('"'))
-        self._mono.setPointSizeF(max(8.0, self.font().pointSizeF() - 0.5))
+        self._mono.setPixelSize(14)
 
         self.setColumnHidden(self.COL_GAME, True)
         self.setColumnHidden(self.COL_TYPE, True)
@@ -748,17 +864,17 @@ class QueueTable(QTreeWidget):
         node.setFont(self.COL_FILE, font)
         node.setText(self.COL_PLATFORM, _platform_label(platform))
         if kind == "game":
-            node.setText(self.COL_STATUS, "Empty — drop files here")
+            node.setText(self.COL_STATUS, "Empty, drop files here")
             node.setToolTip(
                 self.COL_FILE, "Drop a ROM here to put it in this game's folder.")
         elif kind == "platform":
-            node.setText(self.COL_STATUS, "Empty — drop files here")
+            node.setText(self.COL_STATUS, "Empty, drop files here")
             node.setToolTip(
                 self.COL_FILE,
                 "This is the ES-DE folder for that system. Drop a ROM here to "
                 "assign it.")
         else:
-            node.setText(self.COL_STATUS, "Empty — drop files here")
+            node.setText(self.COL_STATUS, "Empty, drop files here")
             node.setToolTip(self.COL_FILE, "Drop a ROM here to put it in this folder.")
         if parent is None:
             self.addTopLevelItem(node)
@@ -1046,7 +1162,7 @@ class QueueTable(QTreeWidget):
         n = self._file_count(folder)
         folder.setText(
             self.COL_STATUS,
-            "Empty — drop files here" if n == 0 else f"{n} file{'s' if n != 1 else ''}")
+            "Empty, drop files here" if n == 0 else f"{n} file{'s' if n != 1 else ''}")
         parent = folder.parent()
         if parent is not None and self._is_folder(parent):
             self._refresh_folder_status(parent)
@@ -1137,17 +1253,26 @@ class QueueTable(QTreeWidget):
         output = (output_for(path, fmt, mode, self._settings, options, platform, member)
                   if fmt else path)
 
-        node.setText(self.COL_PLATFORM, _platform_label(platform) or "unknown")
+        label_text = _platform_label(platform)
+        if label_text:
+            node.setText(self.COL_PLATFORM, label_text)
+            node.setData(self.COL_PLATFORM, Qt.ItemDataRole.ForegroundRole, None)
+        else:
+            node.setText(self.COL_PLATFORM, _PLATFORM_UNKNOWN)
+            node.setForeground(self.COL_PLATFORM, QBrush(theme.color("warn")))
         if self._is_switch_file(node):
             node.setToolTip(
                 self.COL_TYPE,
-                "Base, update or DLC. Click to correct it when the name was read wrong. "
-                "The game folder follows whichever file you mark as Base, so an XCI "
-                "cart keeps the tree even when the update is an NSP.")
+                "Base game, update or DLC, guessed from the file name. Click to change "
+                "it if the guess is wrong. The game's folder is named after the file "
+                "marked Base.")
         node.setToolTip(
             self.COL_PLATFORM,
-            "Which ES-DE folder this file belongs to. It decides the settings, "
-            "and where the result goes when a card is set as the destination.")
+            "Which console this is for. It decides what the file becomes, and "
+            "which console folder it goes into. Click to change it."
+            if label_text else
+            "The app couldn't tell which console this is for, so it would be "
+            "saved next to the original. Click to choose one.")
 
         info = format_info(fmt) if fmt else None
         archive = source_is_archive(path, member)
@@ -1161,7 +1286,9 @@ class QueueTable(QTreeWidget):
                 label = output.suffix.lstrip(".").upper()
         node.setText(self.COL_BECOMES, label)
         node.setData(self.COL_BECOMES, _ROLE_PATH, output)
-        node.setToolTip(self.COL_BECOMES, f"Writes:\n{output}")
+        node.setToolTip(
+            self.COL_BECOMES,
+            f"{self._becomes_tip(info, mode, intent)}\n\nWrites:\n{output}")
         node.setToolTip(self.COL_FILE, f"{path}\n\nWrites:\n{output}")
 
         item.output = output
@@ -1170,6 +1297,16 @@ class QueueTable(QTreeWidget):
         if grouped and item.member:
             caption = item.display_name.rsplit("/", 1)[-1]
         node.setText(self.COL_FILE, caption)
+
+    @staticmethod
+    def _becomes_tip(info: FormatInfo | None, mode: ConversionMode, intent: str) -> str:
+        if mode is ConversionMode.MOVE:
+            if intent == "unzip":
+                return "Taken out of the archive as it is, without converting."
+            return "Copied into place as it is, without converting."
+        if mode is ConversionMode.DECOMPRESS:
+            return "Turned back into the original, uncompressed file."
+        return info.plain if info else ""
 
     def _refresh_row(self, row: int) -> None:
         self._refresh_item(self.files()[row])
@@ -1213,7 +1350,7 @@ class QueueTable(QTreeWidget):
         parents: set[int] = set()
         for row in rows:
             if self._is_on_disk(files[row]):
-                # Nothing will run for it, so telling it it is "Waiting" is a
+                # Nothing will run for it, so telling it it is "Ready" is a
                 # promise the queue cannot keep.
                 continue
             if fmt not in {info.format for info in self._accepted_formats(row)}:
@@ -1235,7 +1372,7 @@ class QueueTable(QTreeWidget):
             options.pop("intent", None)
             node.setData(self.COL_FILE, _ROLE_OPTIONS, options)
             self._refresh_item(node)
-            self.update_status(node.data(self.COL_FILE, _ROLE_ID), "Waiting")
+            self.update_status(node.data(self.COL_FILE, _ROLE_ID), STATUS_READY)
             parent = node.parent()
             if parent is not None:
                 parents.add(id(parent))
@@ -1265,7 +1402,7 @@ class QueueTable(QTreeWidget):
                 options.pop("intent", None)
             node.setData(self.COL_FILE, _ROLE_OPTIONS, options)
             self._refresh_item(node)
-            self.update_status(node.data(self.COL_FILE, _ROLE_ID), "Waiting")
+            self.update_status(node.data(self.COL_FILE, _ROLE_ID), STATUS_READY)
             parent = node.parent()
             if parent is not None:
                 parents.add(id(parent))
@@ -1319,9 +1456,32 @@ class QueueTable(QTreeWidget):
         node.setText(self.COL_STATUS, status)
         node.setForeground(self.COL_STATUS, QBrush(theme.color(
             self._STATUS_COLOURS.get(status, "text"))))
+        if status == STATUS_FAILED:
+            node.setData(self.COL_STATUS, _ROLE_FAILURE, message)
+            summary = explain_failure(message).summary
+            node.setToolTip(self.COL_STATUS, f"{summary}\nClick to see what to do.")
+            node.setToolTip(self.COL_FILE, summary)
+            return
+        node.setData(self.COL_STATUS, _ROLE_FAILURE, None)
+        node.setToolTip(self.COL_STATUS, message)
         if message:
-            node.setToolTip(self.COL_STATUS, message)
             node.setToolTip(self.COL_FILE, message)
+
+    def failure_message(self, item_id: int) -> str | None:
+        """What the converter said about a failed row, or None if it did not fail."""
+        node = self._by_id.get(item_id)
+        if node is None or node.text(self.COL_STATUS) != STATUS_FAILED:
+            return None
+        return node.data(self.COL_STATUS, _ROLE_FAILURE) or ""
+
+    def output_of(self, item_id: int) -> Path | None:
+        node = self._by_id.get(item_id)
+        output = node.data(self.COL_BECOMES, _ROLE_PATH) if node is not None else None
+        return output if isinstance(output, Path) else None
+
+    def failed_ids(self) -> list[int]:
+        return [node.data(self.COL_FILE, _ROLE_ID) for node in self.files()
+                if node.text(self.COL_STATUS) == STATUS_FAILED]
 
     def record_result(self, row: int, input_size: int, output_size: int) -> None:
         node = self._by_id.get(row)
@@ -1345,6 +1505,8 @@ class QueueTable(QTreeWidget):
             status = node.text(self.COL_STATUS)
             node.setForeground(self.COL_STATUS, QBrush(theme.color(
                 self._STATUS_COLOURS.get(status, "text"))))
+            if node.text(self.COL_PLATFORM) == _PLATFORM_UNKNOWN:
+                node.setForeground(self.COL_PLATFORM, QBrush(theme.color("warn")))
             text = node.text(self.COL_SAVED)
             if text and text != "-":
                 node.setForeground(self.COL_SAVED, QBrush(
@@ -1654,6 +1816,9 @@ class QueueTable(QTreeWidget):
         extension = (Path(member).suffix if member else path.suffix).lower()
         return [info for info in FORMAT_CATALOG if extension in info.extensions]
 
+    def _is_failed(self, node: QTreeWidgetItem | None) -> bool:
+        return self._is_file(node) and node.text(self.COL_STATUS) == STATUS_FAILED
+
     def _is_switch_file(self, node: QTreeWidgetItem) -> bool:
         """A Switch dump, including one pulled out of a zip or rar."""
         if not self._is_file(node) or self._is_on_disk(node):
@@ -1739,7 +1904,7 @@ class QueueTable(QTreeWidget):
                 options.pop("intent", None)
                 node.setData(self.COL_FILE, _ROLE_OPTIONS, options)
             self._refresh_item(node)
-            self.update_status(node.data(self.COL_FILE, _ROLE_ID), "Waiting")
+            self.update_status(node.data(self.COL_FILE, _ROLE_ID), STATUS_READY)
             parent = node.parent()
             if parent is not None:
                 parents.add(id(parent))
@@ -1836,6 +2001,9 @@ class QueueTable(QTreeWidget):
         return bool(offered) or True
 
     def _on_item_clicked(self, node: QTreeWidgetItem, column: int) -> None:
+        if column == self.COL_STATUS and self._is_failed(node):
+            self.failure_clicked.emit(node.data(self.COL_FILE, _ROLE_ID))
+            return
         if column not in self._CLICKABLE:
             return
         if column == self.COL_TYPE:
@@ -1864,7 +2032,9 @@ class QueueTable(QTreeWidget):
         index = self.indexAt(event.pos())
         node = self.itemFromIndex(index) if index.isValid() else None
         clickable = False
-        if node is not None and index.column() in self._CLICKABLE:
+        if node is not None and index.column() == self.COL_STATUS:
+            clickable = self._is_failed(node)
+        elif node is not None and index.column() in self._CLICKABLE:
             if index.column() == self.COL_TYPE:
                 clickable = bool(self._part_rows(node))
             elif self._is_file(node):
@@ -1917,6 +2087,14 @@ class QueueTable(QTreeWidget):
 
         menu = QMenu(self)
         menu.setToolTipsVisible(True)
+
+        if self._is_failed(node):
+            explain = QAction("What went wrong?", self)
+            explain.triggered.connect(
+                lambda _c=False, n=node: self.failure_clicked.emit(
+                    n.data(self.COL_FILE, _ROLE_ID)))
+            menu.addAction(explain)
+            menu.addSeparator()
 
         if self._is_switch_file(node):
             part_menu = menu.addMenu("Part")

@@ -24,7 +24,13 @@ Reference
 
 from __future__ import annotations
 
-from aynthor.core.converters.base import BaseConverter, failure, is_decompress, size_progress
+from aynthor.core.converters.base import (
+    BaseConverter,
+    failure,
+    is_decompress,
+    missing_tool,
+    size_progress,
+)
 from aynthor.core.ctr import ncch
 from aynthor.core.ctr import z3ds as container
 from aynthor.core.models import CompressionFormat, ConversionJob
@@ -87,8 +93,8 @@ class Z3dsConverter(BaseConverter):
 
         fallback = tool_path("z3ds_compressor")
         if not fallback.is_file():
-            return False, ("No 3DS compressor installed. Install rom-converto or "
-                           "z3ds_compress from Tools.")
+            return False, missing_tool(
+                "A 3DS compressor (rom-converto or z3ds_compress)", fallback.parent)
 
         args = [str(job.input_path), str(job.output_path)]
         if frame_size := job.options.get("frame_size", 0):
