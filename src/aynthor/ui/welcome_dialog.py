@@ -49,6 +49,7 @@ from aynthor.core.settings import FormatSettings
 from aynthor.core.system import find_prod_keys
 from aynthor.core.tools.manager import ToolsManager
 from aynthor.ui import icons, state, theme
+from aynthor.ui.folder_dialog import pick_folder
 from aynthor.ui.tools_dialog import InstallWorker
 
 
@@ -354,7 +355,7 @@ class WelcomeDialog(QDialog):
         self._update_next()
 
     def _pick(self) -> None:
-        folder = QFileDialog.getExistingDirectory(self, "Choose your ROMs folder")
+        folder = pick_folder(self, "Choose your ROMs folder")
         if folder:
             self.choose_destination(Destination.ROMS, Path(folder))
 

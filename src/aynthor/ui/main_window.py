@@ -65,6 +65,7 @@ from aynthor.ui.about_dialog import AboutDialog
 from aynthor.ui.drop_zone import DropZone
 from aynthor.ui.failure_dialog import FailureDialog
 from aynthor.ui.finish_dialog import FinishDialog
+from aynthor.ui.folder_dialog import pick_folder
 from aynthor.ui.job_runner import JobRunner
 from aynthor.ui.preflight_dialog import PreflightDialog
 from aynthor.ui.queue_view import (
@@ -473,7 +474,7 @@ class MainWindow(QMainWindow):
             self._add([Path(p) for p in paths])
 
     def _pick_folder(self) -> None:
-        folder = QFileDialog.getExistingDirectory(self, "Add a folder")
+        folder = pick_folder(self, "Add a folder")
         if folder:
             self._add([Path(folder)])
 
@@ -528,7 +529,7 @@ class MainWindow(QMainWindow):
             self, "Choose a list file", "", "Text and Markdown (*.txt *.md);;All files (*)")
         if not list_path:
             return
-        roms_root = QFileDialog.getExistingDirectory(self, "Where are the ROMs?")
+        roms_root = pick_folder(self, "Where are the ROMs?")
         if not roms_root:
             return
 

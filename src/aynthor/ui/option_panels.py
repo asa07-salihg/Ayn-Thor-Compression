@@ -47,6 +47,7 @@ from aynthor.core.esde import resolve_roms_root
 from aynthor.core.formats import FORMAT_CATALOG
 from aynthor.core.models import CompressionFormat, ConversionMode
 from aynthor.core.settings import FormatSettings
+from aynthor.ui.folder_dialog import pick_folder
 
 
 def _connect_change(widget: QWidget, slot) -> None:
@@ -792,14 +793,14 @@ class GeneralPanel(QWidget):
             getattr(widget, signal).connect(lambda *_: self.changed.emit())
 
     def _pick_output(self) -> None:
-        path = QFileDialog.getExistingDirectory(self, "Choose an output folder")
+        path = pick_folder(self, "Choose an output folder")
         if path:
             self.output_edit.setText(path)
 
     def _pick_card(self) -> None:
         """Accepts either the ROMs folder or the folder holding it; ES-DE's own
         layout rules work out which was chosen."""
-        path = QFileDialog.getExistingDirectory(self, "Choose your ROMs folder")
+        path = pick_folder(self, "Choose your ROMs folder")
         if path:
             self.esde_edit.setText(str(resolve_roms_root(Path(path))))
 

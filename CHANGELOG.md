@@ -3,6 +3,10 @@
 Notable changes, newest first. Versions follow
 [semantic versioning](https://semver.org/).
 
+## 1.4.1
+
+- The folder window now lists a handheld connected under This PC, such as the AYN Thor. The old window only showed drives with a letter.
+
 ## 1.4.0
 
 Made for people who have never heard of CHD. Everything here is about getting
