@@ -1,22 +1,14 @@
 """Turn a dropped file into the queue rows the runner will see.
 
-Why
-    A row is not "this path". Adding `Game.zip` that holds `Game.iso` used to
-    queue "compress to 7z", which nested an ISO inside a zip inside a 7z, and
-    no emulator reads that. The archive has to be listed first, the ROM inside
-    decides the platform and the format, and the row remembers which member to
-    unpack at run time. Folder labels live here too, so adding `psx` shows
-    `psx/Game.chd/Game.cue` rather than a bare filename.
+A row is not "this path". Adding `Game.zip` that holds `Game.iso` used to
+queue "compress to 7z", which nested an ISO inside a zip inside a 7z, and
+no emulator reads that. The archive has to be listed first, the ROM inside
+decides the platform and the format, and the row remembers which member to
+unpack at run time. Folder labels live here too, so adding `psx` shows
+`psx/Game.chd/Game.cue` rather than a bare filename.
 
-    Keeping this out of the queue widget is what lets the tests below prove
-    the zip-of-an-ISO case without a window.
-
-Used by
-    `ui.queue_view.add_paths`, `ui.main_window` (folder labels).
-
-Reference
-    Game folders and archive peeking:
-    `docs/superpowers/specs/2026-09-07-game-folders-and-archive-unpack-design.md`
+Keeping this out of the queue widget is what lets the tests below prove
+the zip-of-an-ISO case without a window.
 """
 
 from __future__ import annotations
@@ -33,6 +25,7 @@ from aynthor.core.output import (
 )
 from aynthor.core.presets import PresetTable, detect_platform_format
 from aynthor.core.settings import FormatSettings
+from aynthor.core.sheets import disc_size
 from aynthor.core.switch import (
     detect_content_type,
     is_switch_rom,
@@ -170,28 +163,22 @@ def _one(
 
     options = _with_switch_metadata(source, fmt, dict(detected.tool_options))
     platform = detected.platform or ""
-    mode = natural_mode(source, fmt)
+    mode = row_mode(source, fmt, options, settings, member)
     output = output_for(path, fmt, mode, settings, options, platform, member)
-
-    if _should_place(source, fmt, options, settings, member):
-        mode = ConversionMode.MOVE
-        output = output_for(path, fmt, mode, settings, options, platform, member)
 
     if (not member and is_archive(path) and fmt is not CompressionFormat.SEVEN_ZIP):
         # Peek found nothing to convert. chdman cannot read a zip; skip rather
         # than queue a disc job whose input is still the archive.
         return None, f"{path.name}: no convertible ROM inside"
 
-    if (mode is ConversionMode.COMPRESS and output == path
-            and fmt is not CompressionFormat.NDS_TRIM and not member):
-        return None, f"{path.name}: already a {path.suffix.lstrip('.')}"
+    # A file that is already what its platform wants, already where it
+    # belongs, is still queued. There is nothing to do with it today, and the
+    # row says so; choose a card or a device and it becomes a move. Refusing
+    # it at the door meant it could not be moved anywhere at all.
 
     size = source_bytes
     if size <= 0 and not member:
-        try:
-            size = path.stat().st_size
-        except OSError:
-            size = 0
+        size = disc_size(path)
 
     return QueueItem(
         path=path,
@@ -208,6 +195,24 @@ def _one(
     ), None
 
 
+def row_mode(
+    source: Path,
+    fmt: CompressionFormat,
+    options: dict,
+    settings: FormatSettings,
+    member: str = "",
+) -> ConversionMode:
+    """The direction a row takes unless the user picks one.
+
+    It depends on where games go, so the queue asks again whenever that
+    changes: a `.chd` with nowhere else to go is a request to open it, and the
+    same `.chd` with a card or a handheld chosen is a game to put there.
+    """
+    if _should_place(source, fmt, options, settings, member):
+        return ConversionMode.MOVE
+    return natural_mode(source, fmt)
+
+
 def _should_place(
     source: Path,
     fmt: CompressionFormat,
@@ -215,19 +220,15 @@ def _should_place(
     settings: FormatSettings,
     member: str,
 ) -> bool:
-    """The file is already the container this platform wants.
-
-    With game folders on, a loose `Game.chd` still has to move into
-    `Game.chd/Game.chd`. Without them, a `.chd` stays a request to open it.
-    A ROM inside an archive is always placed or converted; it is not already
-    sitting where the emulator will look.
-    """
+    """The file is already the container this platform wants, and something
+    other than converting it is asked for: a game folder, a card, a device,
+    or getting it out of an archive."""
     if fmt is CompressionFormat.NDS_TRIM:
         return False
     suggested = suggest_output_path(source, fmt, ConversionMode.COMPRESS, options)
     if suggested.suffix.lower() != source.suffix.lower():
         return False
-    return bool(settings.game_folders or member)
+    return bool(settings.game_folders or member or settings.has_destination)
 
 
 def _with_switch_metadata(path: Path, fmt: CompressionFormat, options: dict) -> dict:

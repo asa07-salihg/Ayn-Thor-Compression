@@ -1,45 +1,40 @@
 """The Tools window: what is installed, what is missing, what is behind.
 
-Why
-    The app converts nothing without binaries it does not ship, so the first
-    question a new user has is why nothing works. This answers it in one place:
-    which tool each format needs, whether it is present, which version is
-    pinned, and what licence it carries.
+The app converts nothing without binaries it does not ship, so the first
+question a new user has is why nothing works. This answers it in one place:
+which tool each format needs, whether it is present, which version is
+pinned, and what licence it carries.
 
-    Downloads run on a worker thread with a live log rather than a spinner,
-    because a failed download is common (a release asset moves, a proxy
-    interferes) and the reason matters more than the progress.
+Downloads run on a worker thread with a live log rather than a spinner,
+because a failed download is common (a release asset moves, a proxy
+interferes) and the reason matters more than the progress.
 
-    **Check for updates** asks each project for its tags and marks anything
-    behind. It does not offer to install what it finds, and that is deliberate
-    rather than unfinished: the guarantee this app makes is that nothing
-    reaches `tools/` unless it matches a checksum recorded in the manifest.
-    Fetching a version that is by definition not in the manifest would mean
-    running an executable nobody checked. A newer tool ships in the next
-    release of this app, after someone has read the upstream changelog for
-    flag changes.
+**Check for updates** asks each project for its tags and marks anything
+behind. It does not offer to install what it finds, and that is deliberate
+rather than unfinished: the guarantee this app makes is that nothing
+reaches `tools/` unless it matches a checksum recorded in the manifest.
+Fetching a version that is by definition not in the manifest would mean
+running an executable nobody checked. A newer tool ships in the next
+release of this app, after someone has read the upstream changelog for
+flag changes.
 
-    The Status column therefore has three states, not two. A tool can be
-    present and still not be the one this release pins, which is what happens
-    to everyone who installed a tool before the pin moved. Those rows say
-    **Needs update** and the button replaces them, so a pin bumped in a
-    release reaches the machine rather than sitting in a changelog.
+The Status column therefore has three states, not two. A tool can be
+present and still not be the one this release pins, which is what happens
+to everyone who installed a tool before the pin moved. Those rows say
+**Needs update** and the button replaces them, so a pin bumped in a
+release reaches the machine rather than sitting in a changelog.
 
-    Versions, licences and the update check sit behind "Show details". They
-    matter to someone checking where a binary came from, and only crowd the
-    window for someone who just wants their games converted.
+Versions, licences and the update check sit behind "Show details". They
+matter to someone checking where a binary came from, and only crowd the
+window for someone who just wants their games converted.
 
-    DolphinTool is offered two ways. Dolphin publishes no checksums for its
-    Windows builds, so if the user already has Dolphin, copying the exe they
-    already trust is the better option and the button says so.
+DolphinTool is offered two ways. Dolphin publishes no checksums for its
+Windows builds, so if the user already has Dolphin, copying the exe they
+already trust is the better option and the button says so.
 
-Used by
-    `ui.main_window`.
-
-Reference
-    The tool list: `core.tools.manifest`, with licences and provenance in
-    THIRD-PARTY-NOTICES.md.
-    The version check: `core.tools.versions`.
+The tool list: `core.tools.manifest`, with licences and provenance in
+THIRD-PARTY-NOTICES.md.
+The version check: `core.tools.versions`.
 """
 
 from __future__ import annotations

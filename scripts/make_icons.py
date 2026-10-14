@@ -1,22 +1,19 @@
 """Build the application icon from the SVG logo.
 
-Why
-    Windows wants an .ico holding every size it might show: 16 px in a title
-    bar, 32 px on the taskbar, 256 px in Explorer's large view. A logo scaled
-    down from 256 px turns to mush below 32, so there are two drawings:
-    `logo.svg` for the large sizes and `logo-small.svg`, which drops the
-    squeeze marks and thickens the bolt, for the small ones. This renders both
-    and packs them into `app.ico`, which PyInstaller embeds in the exe and the
-    window uses as its icon. It also writes the logo the README shows.
+Windows wants an .ico holding every size it might show: 16 px in a title bar,
+32 px on the taskbar, 256 px in Explorer's large view. The logo is a game card
+squashed between two bars and squinting about it, and those squinting eyes
+turn into an X below 40 px. So there are two drawings: `logo.svg` for the
+large sizes, and `logo-small.svg`, with plain dashes for eyes, for the small
+ones. This renders both and packs them into
+`app.ico`, which PyInstaller embeds in the exe and the window uses as its
+icon. It also writes the logo the README shows.
 
-Usage
-    python scripts/make_icons.py
+Run `python scripts/make_icons.py` after editing either SVG, and commit the
+files it writes.
 
-    Rerun it after editing either SVG, and commit the files it writes.
-
-Reference
-    ICO layout (ICONDIR, ICONDIRENTRY, PNG payloads):
-    https://learn.microsoft.com/en-us/previous-versions/ms997538(v=msdn.10)
+ICO layout (ICONDIR, ICONDIRENTRY, PNG payloads):
+https://learn.microsoft.com/en-us/previous-versions/ms997538(v=msdn.10)
 """
 
 from __future__ import annotations

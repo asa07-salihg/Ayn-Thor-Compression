@@ -1,29 +1,23 @@
 """Ask each converter's project whether the pinned version is still current.
 
-Why
-    Every tool is pinned to an exact version with a checksum, which is what
-    makes the downloads verifiable. The cost is drift: nothing tells you when a
-    project has moved on, and a tool that is two years behind is a tool that is
-    missing two years of format fixes.
+Every tool is pinned to an exact version with a checksum, which is what
+makes the downloads verifiable. The cost is drift: nothing tells you when a
+project has moved on, and a tool that is two years behind is a tool that is
+missing two years of format fixes.
 
-    So the app can ask. What it will not do is install what it finds, and that
-    restraint is the whole point rather than an omission: the guarantee this
-    app makes is that nothing reaches `tools/` unless it matches a checksum
-    recorded in `manifest`. Downloading a version that is by definition not in
-    the manifest would mean running an executable nobody checked. Bumping a pin
-    is a change to this repository, made by a person who read the upstream
-    changelog for flag changes, and it ships in the next release.
+So the app can ask. What it will not do is install what it finds, and that
+restraint is the whole point rather than an omission: the guarantee this
+app makes is that nothing reaches `tools/` unless it matches a checksum
+recorded in `manifest`. Downloading a version that is by definition not in
+the manifest would mean running an executable nobody checked. Bumping a pin
+is a change to this repository, made by a person who read the upstream
+changelog for flag changes, and it ships in the next release.
 
-    So this reports, and points at the release page.
+So this reports, and points at the release page.
 
-Used by
-    `ui.tools_dialog` (the Check for updates button),
-    `scripts/check_tool_updates.py` (the same check before cutting a release).
-
-Reference
-    https://docs.github.com/en/rest/repos/repos#list-repository-tags
-    Unauthenticated requests are rate limited to 60 an hour per address, and
-    this makes one per tool, so a check costs about eight.
+https://docs.github.com/en/rest/repos/repos#list-repository-tags
+Unauthenticated requests are rate limited to 60 an hour per address, and
+this makes one per tool, so a check costs about eight.
 """
 
 from __future__ import annotations

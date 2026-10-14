@@ -1,18 +1,13 @@
 """Tell a Switch base game, update and DLC apart, and group them.
 
-Why
-    Base and update are easy (title id, or the words update/dlc/pack). The
-    only grouping rule that matters after that: once a base title is known,
-    every file whose name starts with that title belongs in the same tree.
+Base and update are easy (title id, or the words update/dlc/pack). The
+only grouping rule that matters after that: once a base title is known,
+every file whose name starts with that title belongs in the same tree.
 
-    Dump names use underscores (`pack_dlc`). Those become spaces first so
-    markers and headers can be read.
+Dump names use underscores (`pack_dlc`). Those become spaces first so
+markers and headers can be read.
 
-Used by
-    `core.romlist`, `ui.queue_view`, `ui.main_window`.
-
-Reference
-    Title id ranges: https://switchbrew.org/wiki/Title_list
+Title id ranges: https://switchbrew.org/wiki/Title_list
 """
 
 from __future__ import annotations

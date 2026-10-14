@@ -1,28 +1,23 @@
 """Decrypt 3DS carts and CIAs by driving the Batch CIA 3DS Decryptor tools.
 
-Why
-    A Python port of the Batch CIA 3DS Decryptor Redux batch script, because
-    the original is a Windows .bat that expects to be double-clicked and cannot
-    report progress or errors back into a GUI. The sequence it implements is
-    not obvious and cannot be shortened:
+A Python port of the Batch CIA 3DS Decryptor Redux batch script, because
+the original is a Windows .bat that expects to be double-clicked and cannot
+report progress or errors back into a GUI. The sequence it implements is
+not obvious and cannot be shortened:
 
-        ctrtool  read the title id, version and crypto key (needs seeddb.bin)
-        decrypt  dump the decrypted NCCH partitions
-        makerom  repack those partitions into a decrypted .cci or .cia
+    ctrtool  read the title id, version and crypto key (needs seeddb.bin)
+    decrypt  dump the decrypted NCCH partitions
+    makerom  repack those partitions into a decrypted .cci or .cia
 
-    The three tools plus seeddb.bin are copied into a private working directory
-    first. That is not tidiness: decrypt.exe writes its output next to itself,
-    so running it from the shared tools folder would scatter multi-gigabyte
-    .ncch intermediates among the binaries.
+The three tools plus seeddb.bin are copied into a private working directory
+first. That is not tidiness: decrypt.exe writes its output next to itself,
+so running it from the shared tools folder would scatter multi-gigabyte
+.ncch intermediates among the binaries.
 
-Used by
-    `core.converters.decrypt3ds.Decrypt3dsConverter`.
-
-Reference
-    https://github.com/xxmichibxx/Batch-CIA-3DS-Decryptor-Redux
-    Title id prefixes (what makes a title a game, patch, DLC or DSiWare):
-    https://www.3dbrew.org/wiki/Title_list
-    makerom: https://github.com/3DSGuy/Project_CTR
+https://github.com/xxmichibxx/Batch-CIA-3DS-Decryptor-Redux
+Title id prefixes (what makes a title a game, patch, DLC or DSiWare):
+https://www.3dbrew.org/wiki/Title_list
+makerom: https://github.com/3DSGuy/Project_CTR
 """
 
 from __future__ import annotations

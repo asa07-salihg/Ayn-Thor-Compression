@@ -1,24 +1,19 @@
 """Say what went wrong with a row, in words a first-time user can act on.
 
-Why
-    A failed row used to show the converter's own text, such as a tools folder
-    path or `[WinError 112] There is not enough space on the disk`, in a log
-    that stays hidden until something fails. Someone filling their first card
-    needs three things instead: what happened, what to do about it, and a
-    button that does it. The original text is kept for bug reports.
+A failed row used to show the converter's own text, such as a tools folder
+path or `[WinError 112] There is not enough space on the disk`, in a log
+that stays hidden until something fails. Someone filling their first card
+needs three things instead: what happened, what to do about it, and a
+button that does it. The original text is kept for bug reports.
 
-    Only failures this app can actually recognise are reworded: the sentence
-    every converter shares for a missing program (`converters.base.missing_tool`),
-    the missing `prod.keys`, the archive errors `core.unpack` raises, and the
-    few Windows errors that a full, locked or busy card produces. Anything else
-    is reported as the converter stopping, with its own words underneath.
+Only failures this app can actually recognise are reworded: the sentence
+every converter shares for a missing program (`converters.base.missing_tool`),
+the missing `prod.keys`, the archive errors `core.unpack` raises, and the
+few Windows errors that a full, locked or busy card produces. Anything else
+is reported as the converter stopping, with its own words underneath.
 
-Used by
-    `ui.failure_dialog`, `ui.queue_view` (the Status tooltip).
-
-Reference
-    Windows error numbers seen here (5, 19, 32, 112):
-    https://learn.microsoft.com/en-us/windows/win32/debug/system-error-codes--0-499-
+Windows error numbers seen here (5, 19, 32, 112):
+https://learn.microsoft.com/en-us/windows/win32/debug/system-error-codes--0-499-
 """
 
 from __future__ import annotations

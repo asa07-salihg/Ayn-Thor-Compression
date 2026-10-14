@@ -3,6 +3,45 @@
 Notable changes, newest first. Versions follow
 [semantic versioning](https://semver.org/).
 
+## 1.5.0
+
+- **Send games straight to a handheld over USB.** Plug an Android handheld in,
+  choose it as the destination, and each game is converted on the PC and then
+  sent into its console's folder under `ROMs`. It works with the SD card and
+  with internal storage, and it doesn't need a drive letter. A game already
+  on the device is skipped, and one that fails to send is kept so the next
+  Start sends it without converting it again.
+- **Skipping happens when a game's turn comes, not when you add it.** A
+  `.chd` or `.7z` that is already in the right format used to be turned away
+  at the door, which meant it could never be moved to a card or a handheld.
+  It's queued now. With nowhere else to go it reads "Already done", and once
+  a destination is chosen it becomes a move.
+- **Rows follow the destination.** Choose a card or a handheld and files that
+  only need copying switch to Move; take it away and they switch back. A
+  direction you picked by hand is left alone.
+- **Cue sheets travel with their tracks.** Moving, sending or deleting a
+  `.cue` or `.gdi` now does the same to every `.bin` it lists, and the Size
+  column counts the whole disc instead of a 2 KB sheet. Converting a cue
+  with "delete originals" on removes the tracks too.
+- **Drag and drop works everywhere.** Files dragged from Explorer onto a
+  queue that already has rows used to be turned away. They're added now,
+  wherever in the window they land, and a file dropped on a game folder
+  joins that game.
+- **A cleaner window.** Each console folder in the queue is a heading band,
+  the format each game becomes is a coloured tag, Skipped has its own mark,
+  and sending to a device gets an arrow next to its bar. The toolbar above
+  the queue loses its dashed box, and the destination at the bottom is a
+  button you can see is a button.
+- **A new logo:** a game card squashed flat, and pulling a face about it.
+- The folder window lists drives with a letter again. 1.4.1 let it show a
+  handheld under This PC, but a folder picked there could not be written to.
+  Choose the handheld under "Straight onto my handheld" instead.
+
+## 1.4.1
+
+- The folder window now lists a handheld connected under This PC, such as the
+  AYN Thor. The old window only showed drives with a letter.
+
 ## 1.4.0
 
 Made for people who have never heard of CHD. Everything here is about getting

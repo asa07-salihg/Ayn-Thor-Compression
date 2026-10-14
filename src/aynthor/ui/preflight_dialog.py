@@ -1,18 +1,14 @@
 """Before Start: what would go wrong, with a button that fixes each thing.
 
-Why
-    `core.preflight` finds the problems; this is the window that asks about
-    them. Each one gets a plain sentence, a fix (install the programs, choose
-    `prod.keys`) and a way to leave those files out of this run. Start stays
-    disabled until every problem that would fail a row is fixed or skipped,
-    so nobody watches a batch turn red for a reason the app already knew.
+`core.preflight` finds the problems; this is the window that asks about
+them. Each one gets a plain sentence, a fix (install the programs, choose
+`prod.keys`) and a way to leave those files out of this run. Start stays
+disabled until every problem that would fail a row is fixed or skipped,
+so nobody watches a batch turn red for a reason the app already knew.
 
-    The delete-sources warning lives here too. It used to be a separate box
-    that appeared after Start, and now it is one more line to read before
-    anything is touched.
-
-Used by
-    `ui.main_window` (Start).
+The delete-sources warning lives here too. It used to be a separate box
+that appeared after Start, and now it is one more line to read before
+anything is touched.
 """
 
 from __future__ import annotations
@@ -42,6 +38,7 @@ from aynthor.ui.tools_dialog import InstallWorker
 _OPEN, _FIXED, _SKIPPED = "open", "fixed", "skipped"
 
 _PROBLEM_ICONS = {
+    ProblemKind.DEVICE_NOT_READY: ("sd-card", "warn"),
     ProblemKind.MISSING_TOOLS: ("package", "warn"),
     ProblemKind.NO_SWITCH_KEYS: ("key", "warn"),
     ProblemKind.UNKNOWN_PLATFORM: ("help", "textSecond"),
@@ -62,6 +59,8 @@ def describe(problem: Problem) -> str:
     """The sentence shown for a problem."""
     count = len(problem.rows)
     needs = "needs" if count == 1 else "need"
+    if problem.kind is ProblemKind.DEVICE_NOT_READY:
+        return f"{problem.detail} ({_files(count)} {'is' if count == 1 else 'are'} waiting for it.)"
     if problem.kind is ProblemKind.MISSING_TOOLS:
         names = [SPECS_BY_KEY[key].label if key in SPECS_BY_KEY else key
                  for key in problem.tools]
@@ -166,6 +165,9 @@ class PreflightDialog(QDialog):
         elif problem.kind is ProblemKind.NO_SWITCH_KEYS:
             fix = QPushButton("Choose prod.keys...")
             fix.clicked.connect(self._pick_keys)
+        elif problem.kind is ProblemKind.DEVICE_NOT_READY:
+            fix = QPushButton("Try again")
+            fix.clicked.connect(self._apply_recheck)
         if fix is not None:
             fix.setProperty("accent", True)
             row.addWidget(fix)

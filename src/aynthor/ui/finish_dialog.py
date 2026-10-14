@@ -1,19 +1,15 @@
 """The summary at the end of a batch: what worked, what did not, where it went.
 
-Why
-    A finished batch used to end with one line in a log that was usually
-    closed, so the only sign was the progress bar disappearing. Someone
-    filling a card needs to know it is done, how much it saved, whether
-    anything failed, and where to find the games. This says all four and
-    offers the two obvious next steps: open the folder, or look at what
-    went wrong.
+A finished batch used to end with one line in a log that was usually
+closed, so the only sign was the progress bar disappearing. Someone
+filling a card needs to know it is done, how much it saved, whether
+anything failed, and where to find the games. This says all four and
+offers the two obvious next steps: open the folder, or look at what
+went wrong.
 
-    It is shown with `open()` rather than `exec()`. The batch has already
-    finished, so nothing waits on the answer, and a modal loop at the end of
-    a run would only get in the way of whatever the user does next.
-
-Used by
-    `ui.main_window` (when a batch finishes without being cancelled).
+It is shown with `open()` rather than `exec()`. The batch has already
+finished, so nothing waits on the answer, and a modal loop at the end of
+a run would only get in the way of whatever the user does next.
 """
 
 from __future__ import annotations

@@ -1,18 +1,13 @@
 """Where the app is running from, and how to get the bundled tools out of it.
 
-Why
-    A PyInstaller one-file build unpacks itself into a temporary directory that
-    is deleted on exit, so the converter binaries cannot simply be run from
-    there -- and a user who downloads a tool from the Tools dialog would lose it
-    on the next launch. On first run the bundled tools are therefore copied out
-    next to the exe, into a `tools/` folder that survives.
+A PyInstaller one-file build unpacks itself into a temporary directory that
+is deleted on exit, so the converter binaries cannot simply be run from
+there -- and a user who downloads a tool from the Tools dialog would lose it
+on the next launch. On first run the bundled tools are therefore copied out
+next to the exe, into a `tools/` folder that survives.
 
-Used by
-    `core.system.tools_dir` (tool lookup), `app.run` (called once at startup).
-
-Reference
-    PyInstaller runtime layout and `sys._MEIPASS`:
-    https://pyinstaller.org/en/stable/runtime-information.html
+PyInstaller runtime layout and `sys._MEIPASS`:
+https://pyinstaller.org/en/stable/runtime-information.html
 """
 
 from __future__ import annotations

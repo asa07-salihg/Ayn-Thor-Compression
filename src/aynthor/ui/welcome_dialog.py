@@ -1,26 +1,21 @@
 """The setup guide: get the programs, pick where games go, find the Switch keys.
 
-Why
-    A first launch used to open on an empty window with nothing installed.
-    Someone who had never heard of chdman added their games, pressed Start,
-    and watched every row turn red. The three things a first batch needs (the
-    converter programs, a place to put the results, and `prod.keys` for
-    Switch) are asked for here, once, in that order, and every step can be
-    skipped.
+A first launch used to open on an empty window with nothing installed.
+Someone who had never heard of chdman added their games, pressed Start,
+and watched every row turn red. The three things a first batch needs (the
+converter programs, a place to put the results, and `prod.keys` for
+Switch) are asked for here, once, in that order, and every step can be
+skipped.
 
-    The destination is a ROMs folder, wherever it lives: on an SD card in a
-    card reader, on a USB drive, or on this computer to copy over later. Each
-    console's folder inside it is created when the first game for it is
-    written. The only other choice is to keep results beside the originals.
-    A handheld on a USB cable appears as a media device rather than a drive
-    letter, and nothing can write to it with ordinary file calls, so the
-    guide says so instead of letting the user find out.
+The destination is a ROMs folder, wherever it lives: on an SD card in a
+card reader, on a USB drive, or on this computer to copy over later. Each
+console's folder inside it is created when the first game for it is
+written. The only other choice is to keep results beside the originals.
+A handheld on a USB cable appears as a media device rather than a drive
+letter, and nothing can write to it with ordinary file calls, so the
+guide says so instead of letting the user find out.
 
-Used by
-    `ui.main_window` (first launch, and More > Setup guide).
-
-Reference
-    ES-DE folder layout: `core.esde`.
+ES-DE folder layout: `core.esde`.
 """
 
 from __future__ import annotations
@@ -49,10 +44,18 @@ from aynthor.core.settings import FormatSettings
 from aynthor.core.system import find_prod_keys
 from aynthor.core.tools.manager import ToolsManager
 from aynthor.ui import icons, state, theme
+from aynthor.ui.destination import (
+    DevicePicker,
+    FolderLister,
+    Scanner,
+    list_folders,
+    scan_devices,
+)
 from aynthor.ui.tools_dialog import InstallWorker
 
 
 class Destination(str, Enum):
+    DEVICE = "device"
     ROMS = "roms"
     BESIDE = "beside"
 
@@ -81,8 +84,11 @@ class _StepBar(QWidget):
 
 class WelcomeDialog(QDialog):
     def __init__(self, settings: FormatSettings, tools: ToolsManager,
-                 parent: QWidget | None = None) -> None:
+                 parent: QWidget | None = None, *,
+                 scanner: Scanner = scan_devices, lister: FolderLister = list_folders) -> None:
         super().__init__(parent)
+        self._scanner = scanner
+        self._lister = lister
         self.setWindowTitle("Setup guide")
         self.setMinimumWidth(620)
         self.settings = settings
@@ -182,13 +188,22 @@ class WelcomeDialog(QDialog):
         page, body = self._page("Where should finished games go?", "", "folder")
         self.destination_group = QButtonGroup(self)
 
-        self.roms_radio = QRadioButton("Into my ROMs folder")
+        self.device_radio = QRadioButton("Straight onto my handheld, over USB")
+        self.device_picker = DevicePicker(self._scanner, self._lister, self.settings.device)
+        self.device_picker.changed.connect(self._update_next)
+        device_box = self._choice(
+            self.device_radio, "", None,
+            "Plug it in with a USB cable, unlock it, and choose File transfer in the "
+            "USB notification. Games are converted on this PC and then sent across.",
+            body=self.device_picker)
+
+        self.roms_radio = QRadioButton("Into a ROMs folder on this PC or an SD card")
         self.roms_path = QLabel()
         roms_box = self._choice(
             self.roms_radio, "Choose the ROMs folder...", self.roms_path,
             "The folder with a folder for each console inside it (psx, snes, switch "
-            "and so on). It can be on an SD card, a USB drive or this computer. Each "
-            "game goes into the folder for its console, which is created if missing.")
+            "and so on). Each game goes into the folder for its console, which is "
+            "created if missing.")
 
         beside_text = (f"In my output folder ({self.settings.output_dir})"
                        if self.settings.output_dir else "Next to the original files")
@@ -196,28 +211,24 @@ class WelcomeDialog(QDialog):
         beside_box = self._choice(
             self.beside_radio, "", None, "Good for freeing up space on this computer.")
 
-        radios = ((self.roms_radio, Destination.ROMS),
+        radios = ((self.device_radio, Destination.DEVICE),
+                  (self.roms_radio, Destination.ROMS),
                   (self.beside_radio, Destination.BESIDE))
         for radio, kind in radios:
             self.destination_group.addButton(radio)
             radio.setProperty("destination", kind.value)
-        for box in (roms_box, beside_box):
+        for box in (device_box, roms_box, beside_box):
             body.addWidget(box)
 
-        usb = QLabel(
-            "A handheld plugged in with a USB cable can't be written to directly. Use "
-            "a card reader, or choose a folder on this computer and copy it over "
-            "afterwards.")
-        usb.setWordWrap(True)
-        usb.setProperty("role", "third")
-        body.addWidget(usb)
-
-        self.destination_hint = QLabel("Choose the ROMs folder first, or pick the other option.")
+        self.destination_hint = QLabel(
+            "Choose the ROMs folder or a device first, or pick another option.")
         self.destination_hint.setProperty("role", "warn")
         body.addWidget(self.destination_hint)
         body.addStretch()
 
-        if self.settings.esde_root:
+        if self.settings.device is not None:
+            self.device_radio.setChecked(True)
+        elif self.settings.esde_root:
             self._roms = Path(self.settings.esde_root)
             self.roms_radio.setChecked(True)
         elif self.settings.output_dir:
@@ -232,7 +243,8 @@ class WelcomeDialog(QDialog):
         return page
 
     def _choice(self, radio: QRadioButton, button_text: str,
-                path_label: QLabel | None, hint: str) -> QWidget:
+                path_label: QLabel | None, hint: str, *,
+                body: QWidget | None = None) -> QWidget:
         box = QWidget()
         column = QVBoxLayout(box)
         column.setContentsMargins(0, 0, 0, 0)
@@ -256,6 +268,8 @@ class WelcomeDialog(QDialog):
         text.setWordWrap(True)
         text.setProperty("role", "third")
         inner.addWidget(text)
+        if body is not None:
+            inner.addWidget(body)
         column.addWidget(details)
         return box
 
@@ -347,6 +361,10 @@ class WelcomeDialog(QDialog):
         if kind is Destination.BESIDE:
             self.beside_radio.setChecked(True)
             return
+        if kind is Destination.DEVICE:
+            self.device_radio.setChecked(True)
+            self._update_next()
+            return
         if path is not None:
             self._roms = resolve_roms_root(path)
         self.roms_radio.setChecked(True)
@@ -406,7 +424,11 @@ class WelcomeDialog(QDialog):
         if self._installing():
             return
         on_destination = self.pages.currentIndex() == 1
-        ready = self.selected_destination() is Destination.BESIDE or self._roms is not None
+        chosen = self.selected_destination()
+        ready = (chosen is Destination.BESIDE
+                 or (chosen is Destination.ROMS and self._roms is not None)
+                 or (chosen is Destination.DEVICE
+                     and self.device_picker.target() is not None))
         self.next_button.setEnabled(ready or not on_destination)
         self.destination_hint.setVisible(on_destination and not ready)
 
@@ -427,10 +449,16 @@ class WelcomeDialog(QDialog):
 
     def apply(self) -> None:
         """Write the choices into the settings this dialog was given."""
-        if self.selected_destination() is Destination.BESIDE:
+        chosen = self.selected_destination()
+        if chosen is Destination.BESIDE:
             self.settings.esde_root = ""
-        elif self._roms is not None:
+            self.settings.device = None
+        elif chosen is Destination.DEVICE and self.device_picker.target() is not None:
+            self.settings.device = self.device_picker.target()
+            self.settings.esde_root = ""
+        elif chosen is Destination.ROMS and self._roms is not None:
             self.settings.esde_root = str(self._roms)
+            self.settings.device = None
         if self._keys is not None:
             self.settings.keys_path = str(self._keys)
 
@@ -439,6 +467,10 @@ class WelcomeDialog(QDialog):
             return
         state.save_welcome_done()
         super().reject()
+
+    def done(self, result: int) -> None:
+        self.device_picker.close_down()
+        super().done(result)
 
     def closeEvent(self, event: QCloseEvent) -> None:
         if self._installing():

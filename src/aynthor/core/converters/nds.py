@@ -1,19 +1,14 @@
 """Nintendo DS cart trimming, via ndstrim.
 
-Why
-    melonDS will not read an archive, so 7z is not an option for DS. The only
-    saving left is the unused tail of the cart image, which the header records
-    the real end of. This is the one "compression" format in the app that
-    modifies a ROM in place rather than producing a new container, so a copy is
-    made first whenever the output path differs from the input.
+melonDS will not read an archive, so 7z is not an option for DS. The only
+saving left is the unused tail of the cart image, which the header records
+the real end of. This is the one "compression" format in the app that
+modifies a ROM in place rather than producing a new container, so a copy is
+made first whenever the output path differs from the input.
 
-Used by
-    `core.converters.registry` for `CompressionFormat.NDS_TRIM`.
-
-Reference
-    https://github.com/Nemris/ndstrim
-    Cart header layout (the used-size field this relies on):
-    https://problemkaputt.de/gbatek.htm#dscartridgeheader
+https://github.com/Nemris/ndstrim
+Cart header layout (the used-size field this relies on):
+https://problemkaputt.de/gbatek.htm#dscartridgeheader
 """
 
 from __future__ import annotations

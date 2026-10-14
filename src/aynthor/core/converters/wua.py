@@ -1,20 +1,15 @@
 """WUA, via rom-converto. Wii U titles for Cemu.
 
-Why
-    A Wii U title is normally a folder tree, or a disc image plus separate
-    update and DLC folders. WUA packs the lot into one archive that Cemu mounts
-    as a single title, which is the difference between a browsable game list
-    and a pile of directories. There is no reverse direction: Cemu reads WUA
-    and nothing converts back, so Open is refused rather than silently doing
-    something else.
+A Wii U title is normally a folder tree, or a disc image plus separate
+update and DLC folders. WUA packs the lot into one archive that Cemu mounts
+as a single title, which is the difference between a browsable game list
+and a pile of directories. There is no reverse direction: Cemu reads WUA
+and nothing converts back, so Open is refused rather than silently doing
+something else.
 
-Used by
-    `core.converters.registry` for `CompressionFormat.WUA`.
-
-Reference
-    https://github.com/DevYukine/rom-converto  (`wup compress`)
-    A .wud/.wux disc image is encrypted with a per-disc key that is not part of
-    the image.
+https://github.com/DevYukine/rom-converto  (`wup compress`)
+A .wud/.wux disc image is encrypted with a per-disc key that is not part of
+the image.
 """
 
 from __future__ import annotations

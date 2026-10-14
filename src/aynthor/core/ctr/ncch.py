@@ -1,26 +1,21 @@
 """Read the encryption state of a 3DS ROM straight from its header.
 
-Why
-    Compressing a still-encrypted ROM is pointless: encrypted data does not
-    compress, and the result is a file the same size as the original that no
-    longer opens in anything. rom-converto refuses such a ROM, but the
-    z3ds_compressor fallback does not, so the app has to know for itself.
-    Reading the header takes a single 512-byte read, which means the answer is
-    available the moment a file enters the queue rather than several minutes
-    into a run.
+Compressing a still-encrypted ROM is pointless: encrypted data does not
+compress, and the result is a file the same size as the original that no
+longer opens in anything. rom-converto refuses such a ROM, but the
+z3ds_compressor fallback does not, so the app has to know for itself.
+Reading the header takes a single 512-byte read, which means the answer is
+available the moment a file enters the queue rather than several minutes
+into a run.
 
-    Only NCSD (.cci / .3ds) and bare NCCH (.cxi) are inspected. A CIA needs the
-    ticket and TMD chain walked to reach the same flags, so it reports
-    "unknown" and the tools decide.
+Only NCSD (.cci / .3ds) and bare NCCH (.cxi) are inspected. A CIA needs the
+ticket and TMD chain walked to reach the same flags, so it reports
+"unknown" and the tools decide.
 
-Used by
-    `core.converters.z3ds` (refusing a compress, and flagging a restored ROM).
-
-Reference
-    NCCH header, flags byte 7 at offset 0x188:
-    https://www.3dbrew.org/wiki/NCCH#NCCH_Header
-    NCSD partition table at 0x120:
-    https://www.3dbrew.org/wiki/NCSD
+NCCH header, flags byte 7 at offset 0x188:
+https://www.3dbrew.org/wiki/NCCH#NCCH_Header
+NCSD partition table at 0x120:
+https://www.3dbrew.org/wiki/NCSD
 """
 
 from __future__ import annotations

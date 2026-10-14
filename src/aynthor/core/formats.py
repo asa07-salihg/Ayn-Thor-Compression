@@ -1,22 +1,15 @@
 """The catalogue of formats, and the rules for naming an output file.
 
-Why
-    Three questions get asked about a format all over the app: which file
-    extensions belong to it, which external tool implements it, and what the
-    output should be called. Answering them in one table keeps the sidebar, the
-    file dialogs, auto-detection and the queue from drifting apart -- a class of
-    bug that already happened once: `.cci` was missing from the Decrypt 3DS
-    extension list, so the file that ZCCI *Open* produces could not be
-    decrypted at all.
+Three questions get asked about a format all over the app: which file
+extensions belong to it, which external tool implements it, and what the
+output should be called. Answering them in one table keeps the sidebar, the
+file dialogs, auto-detection and the queue from drifting apart -- a class of
+bug that already happened once: `.cci` was missing from the Decrypt 3DS
+extension list, so the file that ZCCI *Open* produces could not be
+decrypted at all.
 
-Used by
-    `ui.format_list` (sidebar entries), `ui.option_panels` (panel headers),
-    `ui.queue_view` (which files a format will accept), `core.presets`
-    (fallback when a platform guess fails), `ui.main_window` (folder scan).
-
-Reference
-    Per-format details, and why each platform gets the format it gets:
-    each converter module under `core.converters`.
+Per-format details, and why each platform gets the format it gets:
+each converter module under `core.converters`.
 """
 
 from __future__ import annotations

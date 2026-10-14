@@ -1,25 +1,19 @@
 """Filesystem locations and the one function that runs an external tool.
 
-Why
-    Every converter shells out to a binary, and all of them need the same three
-    things: the path to that binary, a subprocess that does not flash a console
-    window on Windows, and output streamed back line by line so the progress
-    bar can move. `run_tool` is that function. Doing it once here is also what
-    keeps `CREATE_NO_WINDOW` from being forgotten in one converter and turning
-    a batch run into a strobe light.
+Every converter shells out to a binary, and all of them need the same three
+things: the path to that binary, a subprocess that does not flash a console
+window on Windows, and output streamed back line by line so the progress
+bar can move. `run_tool` is that function. Doing it once here is also what
+keeps `CREATE_NO_WINDOW` from being forgotten in one converter and turning
+a batch run into a strobe light.
 
-    This module is named `system` rather than `platform` because the old name
-    shadowed the standard library module it needs to import.
+This module is named `system` rather than `platform` because the old name
+shadowed the standard library module it needs to import.
 
-Used by
-    Every module under `core.converters`, `core.tools.manager`,
-    `core.nsz_runner`, and the prod.keys lookup in `ui.main_window`.
-
-Reference
-    CREATE_NO_WINDOW / STARTUPINFO:
-    https://docs.python.org/3/library/subprocess.html#subprocess.STARTUPINFO
-    prod.keys search order follows nsz's own:
-    https://github.com/nicoboss/nsz#requirements
+CREATE_NO_WINDOW / STARTUPINFO:
+https://docs.python.org/3/library/subprocess.html#subprocess.STARTUPINFO
+prod.keys search order follows nsz's own:
+https://github.com/nicoboss/nsz#requirements
 """
 
 from __future__ import annotations

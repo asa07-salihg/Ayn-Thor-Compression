@@ -1,22 +1,17 @@
 """Settings: general options, and one page per format.
 
-Why
-    The main window has no settings on it. Options are consulted when a default
-    is wrong and ignored the rest of the time, so keeping nine panels
-    permanently on screen cost a third of the width to show something nobody
-    was reading. They live here instead, reachable from the header and from a
-    row's own context menu, which opens straight at that row's format.
+The main window has no settings on it. Options are consulted when a default
+is wrong and ignored the rest of the time, so keeping nine panels
+permanently on screen cost a third of the width to show something nobody
+was reading. They live here instead, reachable from the header and from a
+row's own context menu, which opens straight at that row's format.
 
-    Closing with Save applies a format's page to the rows already queued, but
-    only for pages that were actually touched. Applying all nine would wipe the
-    per-platform values auto-detection had worked out, which is how a PS2 row
-    would silently lose its NetherSX2-compatible codec.
+Closing with Save applies a format's page to the rows already queued, but
+only for pages that were actually touched. Applying all nine would wipe the
+per-platform values auto-detection had worked out, which is how a PS2 row
+would silently lose its NetherSX2-compatible codec.
 
-Used by
-    `ui.main_window`.
-
-Reference
-    The panels themselves: `ui.option_panels`.
+The panels themselves: `ui.option_panels`.
 """
 
 from __future__ import annotations

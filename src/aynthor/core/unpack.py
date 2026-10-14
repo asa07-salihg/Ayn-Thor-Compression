@@ -1,32 +1,26 @@
 """Look inside a ZIP, 7z or RAR, and open it for the length of one conversion.
 
-Why
-    A lot of disc images arrive zipped. Adding `Game.zip` that holds `Game.iso`
-    used to queue "compress to 7z", which would have put an ISO inside a zip
-    inside a 7z: three containers, and an emulator reads none of them. What the
-    user meant was "here is the ISO, do to it what you do to ISOs". So the
-    archive is listed when it is added, the ROM inside decides the platform and
-    the format, and at run time the archive is unpacked into a scratch folder,
-    the converter is handed the extracted file, and the scratch folder is
-    removed afterwards.
+A lot of disc images arrive zipped. Adding `Game.zip` that holds `Game.iso`
+used to queue "compress to 7z", which would have put an ISO inside a zip
+inside a 7z: three containers, and an emulator reads none of them. What the
+user meant was "here is the ISO, do to it what you do to ISOs". So the
+archive is listed when it is added, the ROM inside decides the platform and
+the format, and at run time the archive is unpacked into a scratch folder,
+the converter is handed the extracted file, and the scratch folder is
+removed afterwards.
 
-    `.zip` is read with the standard library, which costs a central-directory
-    read and nothing else, so every zip that is added can be peeked. `.7z` and
-    `.rar` need 7-Zip. The extras `7za` the app installs can list a 7z but not
-    a RAR, so RAR listing uses the full `7z.exe` (tools/ or a 7-Zip install).
-    A `.7z` is only peeked when the folder already says the platform does not
-    want a 7z (`psx/Game.7z`, not `snes/Game.7z`). Arcade romsets stay
-    romsets and are never peeked, except RAR, which is never a romset format.
+`.zip` is read with the standard library, which costs a central-directory
+read and nothing else, so every zip that is added can be peeked. `.7z` and
+`.rar` need 7-Zip. The extras `7za` the app installs can list a 7z but not
+a RAR, so RAR listing uses the full `7z.exe` (tools/ or a 7-Zip install).
+A `.7z` is only peeked when the folder already says the platform does not
+want a 7z (`psx/Game.7z`, not `snes/Game.7z`). Arcade romsets stay
+romsets and are never peeked, except RAR, which is never a romset format.
 
-Used by
-    `core.intake` (whether to look inside, what is inside) and `ui.job_runner`
-    (unpacking, when the row runs).
-
-Reference
-    7-Zip `l -slt` output, one `Key = Value` block per entry:
-    https://documentation.help/7-Zip/list.htm
-    Why member names are checked before extraction:
-    https://cwe.mitre.org/data/definitions/22.html
+7-Zip `l -slt` output, one `Key = Value` block per entry:
+https://documentation.help/7-Zip/list.htm
+Why member names are checked before extraction:
+https://cwe.mitre.org/data/definitions/22.html
 """
 
 from __future__ import annotations

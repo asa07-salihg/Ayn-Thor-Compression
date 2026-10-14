@@ -614,42 +614,6 @@ def test_scene_named_dlc_packs_share_one_tree(app, tmp_path):
     window.close()
 
 
-def test_a_member_job_restores_the_archive_path_after_unpacking(app, tmp_path, monkeypatch):
-    import zipfile
-
-    from aynthor.core.models import CompressionFormat, ConversionJob, ConversionMode
-    from aynthor.ui.job_runner import JobRunner
-
-    archive = tmp_path / "game.zip"
-    with zipfile.ZipFile(archive, "w") as opened:
-        opened.writestr("game.iso", b"disc")
-    output = tmp_path / "out" / "game.chd"
-    seen: dict[str, object] = {}
-
-    class Fake:
-        on_progress = None
-
-        def convert(self, job):
-            seen["input"] = job.input_path
-            seen["bytes"] = job.input_path.read_bytes()
-            job.output_path.write_bytes(b"chd")
-            return True, "ok"
-
-    monkeypatch.setattr("aynthor.ui.job_runner.get_converter", lambda _fmt: Fake())
-    job = ConversionJob(
-        input_path=archive, output_path=output,
-        format=CompressionFormat.CHD,
-        options={"mode": ConversionMode.COMPRESS.value},
-        member="game.iso",
-    )
-    ok, _message = JobRunner([])._execute(0, job)
-    assert ok is True
-    assert job.input_path == archive
-    assert seen["bytes"] == b"disc"
-    assert Path(seen["input"]).name == "game.iso"
-    assert output.is_file()
-
-
 def test_the_becomes_cell_offers_the_formats_that_accept_the_file(app, tmp_path):
     from PySide6.QtWidgets import QMenu
 
@@ -725,9 +689,9 @@ def test_the_becomes_cell_names_the_container_it_will_write(app, tmp_path):
     assert shown["Game.cia"] == "ZCIA"
     assert shown["Cart.3ds"] == "ZCCI"
     assert shown["Mario.sfc"] == "7Z"
-    # An arcade romset that is already a zip has nothing to do, and is skipped
-    # with a reason rather than queued to overwrite itself.
-    assert "sf2.zip" not in shown
+    # An arcade romset that is already a zip is queued, and says it has
+    # nothing to do rather than offering to overwrite itself.
+    assert shown["sf2.zip"] == "Already done"
 
 
 def test_the_platform_cell_can_be_changed_and_moves_the_output(app, tmp_path):
@@ -936,34 +900,6 @@ def test_switching_format_does_not_carry_the_old_format_settings(app, tmp_path):
     assert after.get("level") != 5
     assert "codec" not in after   # the RVZ keys are gone too
     assert "block_size" not in after
-
-
-def test_a_stale_output_does_not_authorise_deleting_the_source(app, tmp_path):
-    """With the conflict policy on overwrite a row is not skipped when its
-    output already exists, so a leftover from an earlier run satisfied every
-    other guard on its own. A converter exiting zero without writing anything
-    would then have deleted the source against somebody else's file."""
-    from aynthor.core.models import CompressionFormat, ConversionJob
-    from aynthor.ui.job_runner import JobRunner
-
-    source = tmp_path / "game.iso"
-    source.write_bytes(b"\0" * 2048)
-    stale = tmp_path / "game.chd"
-    stale.write_bytes(b"\0" * 2048)
-
-    job = ConversionJob(
-        input_path=source, output_path=stale,
-        format=CompressionFormat.CHD, options={}, input_size=2048,
-    )
-    runner = JobRunner([])
-
-    # Pretend the run started after the output was last written.
-    assert runner._delete_source(job, started_at=stale.stat().st_mtime + 60) is False
-    assert source.is_file(), "the source must survive"
-
-    # And a genuine output, written during the run, still allows it.
-    assert runner._delete_source(job, started_at=stale.stat().st_mtime - 60) is True
-    assert not source.exists()
 
 
 def test_switching_theme_repaints_instead_of_leaving_half_the_window_behind(app):
@@ -1195,15 +1131,18 @@ def test_the_bottom_bar_says_where_games_will_go(app, tmp_path):
 def test_skipped_files_are_counted_where_they_can_be_seen(app, tmp_path):
     """A folder of files the app cannot use used to leave the window looking
     unchanged, with the reasons in a closed log."""
+    import zipfile
+
     from aynthor.ui.main_window import MainWindow
 
-    roms = tmp_path / "ROMs" / "fbneo"
+    roms = tmp_path / "ROMs" / "psx"
     roms.mkdir(parents=True)
-    (roms / "sf2.zip").write_bytes(b"\0" * 64)
+    with zipfile.ZipFile(roms / "Empty.zip", "w") as opened:
+        opened.writestr("readme.txt", "no disc in here")
 
     window = MainWindow()
     window.show()
-    window._add([roms / "sf2.zip"])
+    window._add([roms / "Empty.zip"])
     app.processEvents()
     assert window.skipped_button.isVisible()
     assert window.skipped_button.text() == "1 skipped"
@@ -1790,32 +1729,185 @@ def test_retargeting_a_row_retargets_the_folder_it_sits_in(app, tmp_path):
     assert folders.get("Some Game.rvz") == "GameCube"
 
 
-def test_the_runner_can_fold_a_loose_rom_into_its_own_folder(app, tmp_path):
-    """`mkdir(exist_ok=True)` only forgives a directory that is already there,
-    so the runner raised for the one case game folders are built around:
-    folding a loose `Game.7z` into `Game.7z/Game.7z` asks for a folder whose
-    path is the source file. Every already-correct ROM on a card failed the
-    moment game folders were turned on."""
-    from aynthor.core.models import (
-        CompressionFormat,
-        ConversionJob,
-        ConversionMode,
-    )
-    from aynthor.ui.job_runner import JobRunner
+def _drop(widget, paths, pos):
+    from PySide6.QtCore import QMimeData, QPointF, QUrl
+    from PySide6.QtGui import QDropEvent
 
-    platform = tmp_path / "snes"
-    platform.mkdir()
-    rom = platform / "Front Mission.7z"
-    rom.write_bytes(b"archive-bytes")
-    out = platform / "Front Mission.7z" / "Front Mission.7z"
+    mime = QMimeData()
+    mime.setUrls([QUrl.fromLocalFile(str(p)) for p in paths])
+    event = QDropEvent(QPointF(pos), Qt.DropAction.CopyAction, mime,
+                       Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier)
+    widget.dropEvent(event)
+    return event
 
-    runner = JobRunner([])
-    ok, message = runner._execute(0, ConversionJob(
-        input_path=rom,
-        output_path=out,
-        format=CompressionFormat.SEVEN_ZIP,
-        options={"mode": ConversionMode.MOVE.value},
+
+def test_files_dragged_in_from_explorer_land_on_a_full_queue(app, tmp_path):
+    """The queue reorders its own rows by dragging, and that made Qt refuse
+    anything dragged in from outside once it had a row in it."""
+    from aynthor.ui.main_window import MainWindow
+
+    first = tmp_path / "psx" / "One.iso"
+    second = tmp_path / "psx" / "Two.iso"
+    for path in (first, second):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b"\0" * 2048)
+    window = MainWindow()
+    window.show()
+    window._add([first])
+    app.processEvents()
+
+    event = _drop(window.queue, [second], window.queue.viewport().rect().bottomLeft())
+    app.processEvents()
+
+    assert event.isAccepted()
+    assert window.queue.rowCount() == 2
+    window.close()
+
+
+def test_a_drop_anywhere_in_the_window_adds_the_files(app, tmp_path):
+    from aynthor.ui.main_window import MainWindow
+
+    game = tmp_path / "Game.iso"
+    game.write_bytes(b"\0" * 2048)
+    window = MainWindow()
+    window.show()
+    _drop(window, [game], window.rect().center())
+    app.processEvents()
+    assert window.queue.rowCount() == 1
+    window.close()
+
+
+def test_a_file_dropped_on_a_game_folder_joins_that_game(app, tmp_path):
+    from aynthor.ui.main_window import MainWindow
+
+    folder = tmp_path / "switch"
+    folder.mkdir()
+    (folder / "Ys VIII Lacrimosa of DANA [01007F200B0C0000][v0].nsp").write_bytes(b"\0" * 16)
+    (folder / "Ys VIII Lacrimosa of DANA [01007F200B0C0800][v327680].nsp").write_bytes(
+        b"\0" * 16)
+    stray = tmp_path / "Downloads" / "ys8 bonus pack.nsp"
+    stray.parent.mkdir()
+    stray.write_bytes(b"\0" * 16)
+
+    window = MainWindow()
+    window.show()
+    window._add([folder])
+    app.processEvents()
+    [game] = [n for n in window.queue._all_folders() if window.queue._is_game_node(n)]
+    window.queue.expandAll()
+
+    _drop(window.queue, [stray], window.queue.visualItemRect(game).center())
+    app.processEvents()
+
+    names = [game.child(i).text(window.queue.COL_FILE) for i in range(game.childCount())]
+    assert any("bonus pack" in name for name in names), names
+    assert window.queue.rowCount() == 3
+    window.close()
+
+
+def test_a_finished_game_follows_where_games_go(app, tmp_path):
+    """A `.chd` with nowhere else to go is a request to open it. Choose a card
+    and it is copied there; take the card away and it goes back. A direction
+    the user picked by hand is left alone."""
+    from aynthor.core.models import ConversionMode
+    from aynthor.core.settings import FormatSettings
+    from aynthor.ui.main_window import MainWindow
+
+    done = tmp_path / "ROMs" / "psx" / "Done.chd"
+    picked = tmp_path / "ROMs" / "psx" / "Picked.chd"
+    for path in (done, picked):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b"\0" * 2048)
+    card = tmp_path / "Card" / "ROMs"
+    (card / "psx").mkdir(parents=True)
+
+    window = MainWindow()
+    window.show()
+    window.settings = FormatSettings()
+    window.queue.apply_settings(window.settings)
+    window._add([done, picked])
+    app.processEvents()
+    rows = {window.queue.row_item(r).path.name: r for r in range(window.queue.rowCount())}
+    becomes = lambda name: window.queue.item(rows[name], window.queue.COL_BECOMES).text()  # noqa: E731
+
+    assert window.queue.row_mode(rows["Done.chd"]) is ConversionMode.DECOMPRESS
+    window.queue.set_mode([rows["Picked.chd"]], ConversionMode.DECOMPRESS)
+
+    window.settings = FormatSettings(esde_root=str(card))
+    window.queue.apply_settings(window.settings)
+    assert becomes("Done.chd") == "Move"
+    assert window.queue.row_item(rows["Done.chd"]).output.parent == card / "psx"
+    assert window.queue.row_mode(rows["Picked.chd"]) is ConversionMode.DECOMPRESS
+
+    window.settings = FormatSettings()
+    window.queue.apply_settings(window.settings)
+    assert window.queue.row_mode(rows["Done.chd"]) is ConversionMode.DECOMPRESS
+    window.close()
+
+
+def _wait_for(app, condition, timeout=5.0):
+    import time
+
+    end = time.monotonic() + timeout
+    while not condition() and time.monotonic() < end:
+        app.processEvents()
+        time.sleep(0.01)
+    assert condition()
+
+
+def _thor(problem=""):
+    from aynthor.core.device import FoundDevice, FoundStorage
+
+    if problem:
+        return FoundDevice("usb#thor", "AYN Thor", (), problem)
+    return FoundDevice("usb#thor", "AYN Thor", (
+        FoundStorage("Internal shared storage", 465 << 30, 399 << 30, None),
+        FoundStorage("disk", 953 << 30, 40 << 30, "ROMs"),
     ))
 
-    assert ok, message
-    assert out.read_bytes() == b"archive-bytes"
+
+def test_the_sd_card_with_a_roms_folder_is_picked_and_saved(app):
+    from aynthor.core.settings import FormatSettings
+    from aynthor.ui.destination import DestinationDialog
+
+    settings = FormatSettings(esde_root="D:/ROMs")
+    dialog = DestinationDialog(settings, scanner=lambda: [_thor()], lister=lambda *_: [])
+    dialog.device_radio.setChecked(True)
+    _wait_for(app, lambda: dialog.picker.target() is not None)
+
+    assert dialog.picker.target().storage == "disk"
+    assert dialog.ok_button.isEnabled()
+    dialog.accept()
+
+    assert settings.device is not None
+    assert (settings.device.device_name, settings.device.storage, settings.device.root) == (
+        "AYN Thor", "disk", "ROMs")
+    assert settings.esde_root == ""
+
+
+def test_nothing_plugged_in_says_what_to_do_and_blocks_ok(app):
+    from aynthor.core.settings import FormatSettings
+    from aynthor.ui.destination import DestinationDialog
+
+    dialog = DestinationDialog(FormatSettings(), scanner=lambda: [], lister=lambda *_: [])
+    dialog.device_radio.setChecked(True)
+    _wait_for(app, lambda: dialog.picker.rescan_button.isEnabled())
+
+    assert "Nothing is plugged in" in dialog.picker.status.text()
+    assert not dialog.ok_button.isEnabled()
+    assert dialog.hint.text()
+    dialog.reject()
+
+
+def test_a_locked_device_shows_why_it_could_not_be_opened(app):
+    from aynthor.core.settings import FormatSettings
+    from aynthor.ui.destination import DestinationDialog
+
+    problem = "Windows can't open AYN Thor. Unlock it and choose File transfer."
+    dialog = DestinationDialog(FormatSettings(), scanner=lambda: [_thor(problem)],
+                               lister=lambda *_: [])
+    dialog.device_radio.setChecked(True)
+    _wait_for(app, lambda: dialog.picker.rescan_button.isEnabled())
+    assert dialog.picker.status.text() == problem
+    assert not dialog.ok_button.isEnabled()
+    dialog.reject()

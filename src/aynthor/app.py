@@ -1,16 +1,11 @@
 """Start the Qt application.
 
-Why
-    Kept separate from `__main__` so the `--nsz-cli` passthrough can run
-    without importing Qt at all. A frozen build spawns that child process for
-    every Switch job, and loading PySide6 in it would cost a second and around
-    a hundred megabytes of memory each time for a window that never appears.
+Kept separate from `__main__` so the `--nsz-cli` passthrough can run
+without importing Qt at all. A frozen build spawns that child process for
+every Switch job, and loading PySide6 in it would cost a second and around
+a hundred megabytes of memory each time for a window that never appears.
 
-Used by
-    `__main__.main`.
-
-Reference
-    Why nsz runs out of process: `core.nsz_runner`.
+Why nsz runs out of process: `core.nsz_runner`.
 """
 
 from __future__ import annotations

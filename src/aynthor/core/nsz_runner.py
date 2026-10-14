@@ -1,25 +1,20 @@
 """Run the bundled nsz package as a subprocess of ourselves.
 
-Why
-    Two problems, one solution. First, nsz's pip console script is a launcher
-    stub that only works next to the Python environment it was installed into,
-    so it cannot be shipped inside a frozen exe. Second, nsz uses
-    `multiprocessing` and mutates global state during a run, so importing it
-    into the GUI process left worker processes behind when a job was cancelled.
+Two problems, one solution. First, nsz's pip console script is a launcher
+stub that only works next to the Python environment it was installed into,
+so it cannot be shipped inside a frozen exe. Second, nsz uses
+`multiprocessing` and mutates global state during a run, so importing it
+into the GUI process left worker processes behind when a job was cancelled.
 
-    The app therefore re-invokes its own executable with `--nsz-cli` and lets
-    that process be nsz. `__main__.main` picks the flag up before Qt is
-    imported, so the child never builds a window.
+The app therefore re-invokes its own executable with `--nsz-cli` and lets
+that process be nsz. `__main__.main` picks the flag up before Qt is
+imported, so the child never builds a window.
 
-    nsz resolves its keys file relative to `sys.argv[0]` at import time, which
-    is why the passthrough sets argv[0] to a bare name: the lookup then falls
-    back to the working directory, where `stage_keys` has put the keys.
+nsz resolves its keys file relative to `sys.argv[0]` at import time, which
+is why the passthrough sets argv[0] to a bare name: the lookup then falls
+back to the working directory, where `stage_keys` has put the keys.
 
-Used by
-    `core.converters.nsz.NszConverter`, `__main__.main` (the flag).
-
-Reference
-    https://github.com/nicoboss/nsz
+https://github.com/nicoboss/nsz
 """
 
 from __future__ import annotations

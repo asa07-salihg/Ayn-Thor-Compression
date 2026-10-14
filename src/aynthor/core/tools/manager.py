@@ -1,36 +1,30 @@
 """Download, verify and install the external converter tools.
 
-Why
-    The app is useless without binaries it does not ship, and asking a user to
-    hunt down eight of them is how a tool gets closed and forgotten. So it
-    fetches them. That makes this module the app's most security-sensitive
-    code, and it is written accordingly:
+The app is useless without binaries it does not ship, and asking a user to
+hunt down eight of them is how a tool gets closed and forgotten. So it
+fetches them. That makes this module the app's most security-sensitive
+code, and it is written accordingly:
 
-    * Nothing reaches `tools/` before its SHA-256 matches `manifest`. A file
-      that does not match is discarded and reported, not installed.
-    * Archives are unpacked into a scratch directory and only the named members
-      are copied out, so an archive cannot drop extra files next to the ones
-      the app runs.
-    * Archive members are matched by their full path inside the archive, not by
-      filename. The 7-Zip extras archive ships x86, x64 and arm64 builds of the
-      same filename; matching loosely installed the wrong architecture.
-    * Every path that comes out of an archive is checked to be inside the
-      scratch directory. An archive entry named `../../evil.exe` is a classic
-      way to write outside the extraction root; Python's zipfile drops such
-      components on its own and 7-Zip refuses them, but this code is what runs
-      the result, so it verifies rather than trusts.
+* Nothing reaches `tools/` before its SHA-256 matches `manifest`. A file
+  that does not match is discarded and reported, not installed.
+* Archives are unpacked into a scratch directory and only the named members
+  are copied out, so an archive cannot drop extra files next to the ones
+  the app runs.
+* Archive members are matched by their full path inside the archive, not by
+  filename. The 7-Zip extras archive ships x86, x64 and arm64 builds of the
+  same filename; matching loosely installed the wrong architecture.
+* Every path that comes out of an archive is checked to be inside the
+  scratch directory. An archive entry named `../../evil.exe` is a classic
+  way to write outside the extraction root; Python's zipfile drops such
+  components on its own and 7-Zip refuses them, but this code is what runs
+  the result, so it verifies rather than trusts.
 
-    Transport is handled by `core.net`, which enforces HTTPS through redirects
-    and caps the download size. That is the weaker half of the guarantee: the
-    checksums are what say the bytes are the ones we expected.
+Transport is handled by `core.net`, which enforces HTTPS through redirects
+and caps the download size. That is the weaker half of the guarantee: the
+checksums are what say the bytes are the ones we expected.
 
-Used by
-    `ui.tools_dialog` (the Tools window), `scripts/fetch_tools.py` (headless
-    setup and CI).
-
-Reference
-    What each tool is and where it comes from: `manifest`, and
-    THIRD-PARTY-NOTICES.md for licences.
+What each tool is and where it comes from: `manifest`, and
+THIRD-PARTY-NOTICES.md for licences.
 """
 
 from __future__ import annotations

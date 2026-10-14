@@ -1,23 +1,18 @@
 """Line icons drawn in the theme's colours, and the app's logo.
 
-Why
-    Text-only buttons gave every control the same weight, so someone scanning
-    the window for where to add games had to read every label. One small line
-    icon per action fixes that without turning the window into a toolbar.
+Text-only buttons gave every control the same weight, so someone scanning
+the window for where to add games had to read every label. One small line
+icon per action fixes that without turning the window into a toolbar.
 
-    Each icon is an SVG whose strokes say `currentColor`. That word is
-    replaced with a theme colour before the SVG is drawn, so one file serves
-    the light theme, the dark theme and the accent button, and the result is
-    sharp at any display scaling. Drawing goes through Qt's SVG image plugin,
-    the same one the stylesheet's check mark already needs, so the exe ships
-    nothing new for it.
+Each icon is an SVG whose strokes say `currentColor`. That word is
+replaced with a theme colour before the SVG is drawn, so one file serves
+the light theme, the dark theme and the accent button, and the result is
+sharp at any display scaling. Drawing goes through Qt's SVG image plugin,
+the same one the stylesheet's check mark already needs, so the exe ships
+nothing new for it.
 
-Used by
-    `ui.main_window`, `ui.drop_zone`, and the dialogs that show an icon.
-
-Reference
-    The icons: `ui/assets/icons/*.svg`, 24 by 24, 1.75 px round strokes.
-    The logo: `ui/assets/logo.svg`, and `scripts/make_icons.py` for app.ico.
+The icons: `ui/assets/icons/*.svg`, 24 by 24, 1.75 px round strokes.
+The logo: `ui/assets/logo.svg`, and `scripts/make_icons.py` for app.ico.
 """
 
 from __future__ import annotations
@@ -33,7 +28,7 @@ from aynthor.ui.theme import ASSETS
 
 ICONS = ASSETS / "icons"
 _ICON_SIZES = (16, 20, 24, 32, 40, 48)
-# Below this the large logo's squeeze marks blur, so the plain bolt is drawn.
+# Below this the large logo's squinting eyes read as an X, so the simpler face is drawn.
 _SMALL_LOGO_LIMIT = 40
 
 

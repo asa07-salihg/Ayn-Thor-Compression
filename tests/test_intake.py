@@ -33,13 +33,44 @@ def test_a_zip_holding_an_iso_in_ps2_queues_a_chd_row(tmp_path: Path):
 
 
 def test_a_zip_in_fbneo_is_left_as_a_romset(tmp_path: Path):
-    """Even a zip that happens to contain an .iso is a romset, not a disc."""
+    """Even a zip that happens to contain an .iso is a romset, not a disc.
+    It is queued all the same, with nothing to do until it has somewhere
+    else to go; the batch skips it."""
     archive = _zip(tmp_path / "ROMs" / "fbneo" / "kof97.zip",
                    {"kof97.iso": b"not really"})
     items, reason = queue_items_for(archive, FormatSettings())
-    assert items == []
-    assert reason is not None
-    assert "already a zip" in reason
+    assert reason is None
+    [row] = items
+    assert row.member == ""
+    assert row.mode is ConversionMode.COMPRESS
+    assert row.output == archive
+
+
+def test_a_finished_game_is_moved_once_there_is_a_card_to_put_it_on(tmp_path: Path):
+    """Refusing `Game.chd` at the door meant it could never be copied to a card
+    or a handheld. With a destination chosen it is a move."""
+    game = tmp_path / "Downloads" / "Game.chd"
+    game.parent.mkdir(parents=True)
+    game.write_bytes(b"\0" * 64)
+    card = tmp_path / "Card" / "ROMs"
+    (card / "psx").mkdir(parents=True)
+
+    items, reason = queue_items_for(game, FormatSettings(esde_root=str(card)))
+
+    assert reason is None
+    [row] = items
+    assert row.mode is ConversionMode.MOVE
+
+
+def test_a_finished_game_with_nowhere_to_go_is_still_queued(tmp_path: Path):
+    game = tmp_path / "ROMs" / "psx" / "Game.chd"
+    game.parent.mkdir(parents=True)
+    game.write_bytes(b"\0" * 64)
+
+    items, reason = queue_items_for(game, FormatSettings())
+
+    assert reason is None
+    assert len(items) == 1
 
 
 def test_an_arcade_zip_is_placed_in_its_game_folder(tmp_path: Path):

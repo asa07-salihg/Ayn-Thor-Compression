@@ -1,23 +1,17 @@
 """ES-DE ROM folder names, and how to find the right one on a card.
 
-Why
-    Importing a list means turning "Chrono Cross -> psx" into a real file, and
-    that only works if the app knows where ES-DE keeps PS1 games. The names are
-    not guessable: SNES lives in `snes` on some setups and `sfc` on others,
-    Mega Drive in `megadrive` or `genesis`, arcade in `fbneo`, `fba` or `mame`.
-    Each platform therefore lists its alternatives and all of them are searched.
+Importing a list means turning "Chrono Cross -> psx" into a real file, and
+that only works if the app knows where ES-DE keeps PS1 games. The names are
+not guessable: SNES lives in `snes` on some setups and `sfc` on others,
+Mega Drive in `megadrive` or `genesis`, arcade in `fbneo`, `fba` or `mame`.
+Each platform therefore lists its alternatives and all of them are searched.
 
-    `resolve_roms_root` exists because users select the wrong folder. Given an
-    SD card root it finds `ROMs/` inside it; given `ROMs/` it uses it directly;
-    given a folder that already contains `psx/` and friends it accepts that too.
+`resolve_roms_root` exists because users select the wrong folder. Given an
+SD card root it finds `ROMs/` inside it; given `ROMs/` it uses it directly;
+given a folder that already contains `psx/` and friends it accepts that too.
 
-Used by
-    `core.romlist` (locating files named in a list), `core.presets`
-    (platform guess for an ambiguous .iso), `ui.main_window` (folder audit).
-
-Reference
-    Folder names follow the ES-DE directory layout:
-    https://github.com/retrogamecorps/ES-DE-Directories
+Folder names follow the ES-DE directory layout:
+https://github.com/retrogamecorps/ES-DE-Directories
 """
 
 from __future__ import annotations

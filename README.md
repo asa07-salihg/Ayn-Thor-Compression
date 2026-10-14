@@ -10,11 +10,17 @@
 </p>
 
 <p align="center">
-Ayn Thor Compression is a Windows app for the ROM compression tools emulators
-use. Each system wants its own format and its own program: CHD from chdman,
-RVZ from DolphinTool, NSZ from nsz. 3DS ROMs have to be decrypted before
-compression helps. Add the files to one queue and the app runs the tool for
-each file.
+Ayn Thor Compression is a free Windows app that shrinks ROMs into the formats
+emulators read, and puts them where your handheld looks for them. Each system
+wants its own format and its own program: CHD from chdman, RVZ from
+DolphinTool, NSZ from nsz, ZCCI for 3DS. Add the files to one queue and the
+app runs the right tool for each one.
+</p>
+
+<p align="center">
+Plug an Android handheld in with a USB cable and the games can go straight
+onto it, into the ES-DE <code>ROMs</code> folder on its SD card. No card reader,
+no copying by hand.
 </p>
 
 <p align="center">
@@ -61,6 +67,24 @@ yours:
 <p align="center">
 <img src="docs/images/ui-light.png" alt="The same window in the light theme">
 </p>
+
+## Send games to your handheld over USB
+
+An Android handheld on a USB cable shows up in Explorer as a device, not a
+drive, so most PC tools can't write to it. This app can.
+
+1. Plug the handheld in, unlock it, and pick **File transfer** in the USB
+   notification on it.
+2. Click the destination at the bottom of the window and choose
+   **Straight onto my handheld**. The SD card is picked for you if it already
+   has a `ROMs` folder.
+3. Press Start. Each game is converted on the PC first and then sent into the
+   folder for its console, so `psx` games land in `ROMs/psx`.
+
+A game that is already on the handheld is skipped. A file that is already in
+the right format, like a `.chd` or a `.rvz`, is sent as it is. A cue sheet
+goes with every `.bin` it lists. It works with any Android device that
+Windows shows under This PC, the Ayn Thor, Odin and Retroid Pocket included.
 
 ## Legal
 

@@ -1,34 +1,28 @@
 """Windows 11 styling: system accent, system light/dark, Fluent surfaces.
 
-Why
-    This is a Windows utility, and it should look like one rather than like a
-    web page rendered in Qt. That means three things Qt will not do on its own:
+This is a Windows utility, and it should look like one rather than like a
+web page rendered in Qt. That means three things Qt will not do on its own:
 
-    * Take the accent colour from the system. Windows stores an eight-entry
-      accent palette in the registry, and Fluent uses a different entry for
-      light and dark themes, because the one that reads well on white is
-      unreadable on near-black. Both are read here, and the text colour on top
-      of each is chosen by luminance rather than assumed.
-    * Follow the system light/dark setting, and change with it, unless the user
-      has picked one explicitly.
-    * Use Fluent's surface layers and radii. Fluent is not flat: a page sits on
-      one fill, cards sit on a lighter one, and controls on a lighter one
-      still, separated by hairlines rather than shadows. Radii are 4 for
-      controls and 8 for cards, and getting that wrong is what makes a Qt app
-      look like a Qt app.
+* Take the accent colour from the system. Windows stores an eight-entry
+  accent palette in the registry, and Fluent uses a different entry for
+  light and dark themes, because the one that reads well on white is
+  unreadable on near-black. Both are read here, and the text colour on top
+  of each is chosen by luminance rather than assumed.
+* Follow the system light/dark setting, and change with it, unless the user
+  has picked one explicitly.
+* Use Fluent's surface layers and radii. Fluent is not flat: a page sits on
+  one fill, cards sit on a lighter one, and controls on a lighter one
+  still, separated by hairlines rather than shadows. Radii are 4 for
+  controls and 8 for cards, and getting that wrong is what makes a Qt app
+  look like a Qt app.
 
-    Everything falls back to sensible constants off Windows, so the interface
-    is still usable when developing on Linux.
+Everything falls back to sensible constants off Windows, so the interface
+is still usable when developing on Linux.
 
-Used by
-    `app.run`, `ui.main_window` (the View menu), and any widget that needs a
-    status colour.
-
-Reference
-    Fluent colour roles and layering:
-    https://learn.microsoft.com/windows/apps/design/style/color
-    Accent palette layout in the registry:
-    HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Accent
+Fluent colour roles and layering:
+https://learn.microsoft.com/windows/apps/design/style/color
+Accent palette layout in the registry:
+HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Accent
 """
 
 from __future__ import annotations
@@ -224,6 +218,17 @@ QFrame[role="dropzone"][active="true"] {{
     border: 1px dashed {accent};
     background: {controlHover};
 }}
+QFrame[role="dropzone"][compact="true"] {{
+    background: transparent; border: none;
+}}
+QFrame[role="dropzone"][compact="true"][active="true"] {{
+    background: {controlHover}; border: 1px dashed {accent};
+}}
+QLabel[role="tag"] {{
+    background: {card}; border: 1px solid {stroke}; border-radius: 9px;
+    color: {textSecond}; font-size: 12px; font-weight: 600; padding: 2px 10px;
+}}
+QLabel[role="tag"][accent="true"] {{ border-color: {accent}; color: {accent}; }}
 QFrame[role="bar"] {{
     background: {card};
     border-top: 1px solid {stroke};
@@ -260,6 +265,13 @@ QPushButton[subtle="true"] {{
 }}
 QPushButton[subtle="true"]:hover {{ background: {subtleHover}; }}
 QPushButton[subtle="true"]:pressed {{ background: {controlPress}; color: {textSecond}; }}
+
+QPushButton[pill="true"] {{
+    background: {cardAlt}; border: 1px solid {stroke}; border-radius: 15px;
+    color: {text}; padding: 4px 14px 4px 10px;
+}}
+QPushButton[pill="true"]:hover {{ background: {subtleHover}; border-color: {accent}; }}
+QPushButton[pill="true"][device="true"] {{ border-color: {accent}; }}
 
 /* ---- inputs ----------------------------------------------------------- */
 QLineEdit, QComboBox, QSpinBox {{

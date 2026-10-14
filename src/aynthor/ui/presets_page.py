@@ -1,25 +1,20 @@
 """The Platform presets page: what each system becomes, and with what settings.
 
-Why
-    These choices used to be invisible. A PS2 file quietly became a zlib CHD
-    with hunk 2048, a GameCube ISO became a level 5 zstd RVZ, and nothing on
-    screen said so, let alone let anyone change it. That is fine until it is
-    wrong for your setup, at which point there was no way to find out what the
-    app had decided, never mind adjust it.
+These choices used to be invisible. A PS2 file quietly became a zlib CHD
+with hunk 2048, a GameCube ISO became a level 5 zstd RVZ, and nothing on
+screen said so, let alone let anyone change it. That is fine until it is
+wrong for your setup, at which point there was no way to find out what the
+app had decided, never mind adjust it.
 
-    So the table is here in full: every platform, what it converts to, and the
-    exact flags. Pick a row and the format's own options panel appears below it,
-    filled in with that platform's values. Rows that differ from the built-in
-    defaults are marked, and any of them can be put back, because several of
-    the defaults exist to work around one specific emulator and are easy to
-    break by accident.
+So the table is here in full: every platform, what it converts to, and the
+exact flags. Pick a row and the format's own options panel appears below it,
+filled in with that platform's values. Rows that differ from the built-in
+defaults are marked, and any of them can be put back, because several of
+the defaults exist to work around one specific emulator and are easy to
+break by accident.
 
-Used by
-    `ui.settings_dialog`.
-
-Reference
-    The table itself: `core.presets`. Why each default is what it is:
-    `core.presets`, where every default carries the reason it exists.
+The table itself: `core.presets`. Why each default is what it is:
+`core.presets`, where every default carries the reason it exists.
 """
 
 from __future__ import annotations

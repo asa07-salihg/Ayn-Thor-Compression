@@ -1,17 +1,12 @@
 """RVZ, via DolphinTool. GameCube and Wii disc images.
 
-Why
-    RVZ is Dolphin's own format and the only one that both compresses and
-    scrubs: Nintendo's discs are padded to a fixed size with junk data, and RVZ
-    drops it. GCZ and WBFS do not, which is why a GameCube ISO can lose most of
-    its size here and almost none elsewhere.
+RVZ is Dolphin's own format and the only one that both compresses and
+scrubs: Nintendo's discs are padded to a fixed size with junk data, and RVZ
+drops it. GCZ and WBFS do not, which is why a GameCube ISO can lose most of
+its size here and almost none elsewhere.
 
-Used by
-    `core.converters.registry` for `CompressionFormat.RVZ`.
-
-Reference
-    DolphinTool usage:
-    https://github.com/dolphin-emu/dolphin/tree/master/Source/Core/DolphinTool
+DolphinTool usage:
+https://github.com/dolphin-emu/dolphin/tree/master/Source/Core/DolphinTool
 """
 
 from __future__ import annotations

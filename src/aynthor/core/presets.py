@@ -1,37 +1,30 @@
 """What each platform gets converted to, and with which settings.
 
-Why
-    Nobody wants to pick a format nine times for nine systems, so dropping a
-    whole card into the window has to work without being told anything. The
-    extension usually identifies the platform, and the platform decides both
-    the format and the flags that platform's emulator actually needs.
+Nobody wants to pick a format nine times for nine systems, so dropping a
+whole card into the window has to work without being told anything. The
+extension usually identifies the platform, and the platform decides both
+the format and the flags that platform's emulator actually needs.
 
-    These choices used to be invisible: a PS2 file quietly became a zlib CHD
-    with hunk 2048 and nothing said so, let alone let anyone change it. They
-    are a `PresetTable` now, shown and edited in Settings, with the built-in
-    values kept separately so any row can be put back.
+These choices used to be invisible: a PS2 file quietly became a zlib CHD
+with hunk 2048 and nothing said so, let alone let anyone change it. They
+are a `PresetTable` now, shown and edited in Settings, with the built-in
+values kept separately so any row can be put back.
 
-    `.iso` is the awkward case, and the reason this looks at the whole path
-    rather than the filename. A `.iso` can be PS2, PSP, GameCube or Wii, and
-    those want different formats. The ES-DE folder it sits in is the only
-    reliable signal, so `ROMs/gc/game.iso` becomes RVZ while `ROMs/ps2/game.iso`
-    becomes CHD. With nothing to go on it falls back to PS2, which is the
-    largest ISO library on a handheld of this class by a wide margin.
+`.iso` is the awkward case, and the reason this looks at the whole path
+rather than the filename. A `.iso` can be PS2, PSP, GameCube or Wii, and
+those want different formats. The ES-DE folder it sits in is the only
+reliable signal, so `ROMs/gc/game.iso` becomes RVZ while `ROMs/ps2/game.iso`
+becomes CHD. With nothing to go on it falls back to PS2, which is the
+largest ISO library on a handheld of this class by a wide margin.
 
-    `.zip` and `.7z` are the same kind of ambiguity. A zip in `fbneo/` is an
-    arcade romset; a zip in `snes/` is a cartridge dump that should become a
-    7z. The extension table still maps `.zip` to FBNeo and `.7z` to SNES for
-    files that sit in Downloads with no folder to go on.
+`.zip` and `.7z` are the same kind of ambiguity. A zip in `fbneo/` is an
+arcade romset; a zip in `snes/` is a cartridge dump that should become a
+7z. The extension table still maps `.zip` to FBNeo and `.7z` to SNES for
+files that sit in Downloads with no folder to go on.
 
-Used by
-    `ui.queue_view` (every file added), `core.romlist` (imported lists),
-    `ui.presets_page` (showing and editing them), `ui.state` (persisting the
-    edits).
-
-Reference
-    Why each platform gets the format it gets: the `reason` on every entry
-    below.
-    Folder names: `core.esde`.
+Why each platform gets the format it gets: the `reason` on every entry
+below.
+Folder names: `core.esde`.
 """
 
 from __future__ import annotations

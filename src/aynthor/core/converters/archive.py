@@ -1,18 +1,13 @@
 """7z and ZIP, via 7-Zip. Cartridge ROMs and arcade romsets.
 
-Why
-    SNES, Mega Drive, GB and GBA ROMs are plain uncompressed data and give up a
-    lot to a general-purpose compressor. RetroArch opens 7z transparently, so
-    there is no cost to the user. FBNeo and MAME are the exception: those cores
-    expect a zipped romset and will not look inside a 7z, which is why the
-    archive type is a setting rather than a constant.
+SNES, Mega Drive, GB and GBA ROMs are plain uncompressed data and give up a
+lot to a general-purpose compressor. RetroArch opens 7z transparently, so
+there is no cost to the user. FBNeo and MAME are the exception: those cores
+expect a zipped romset and will not look inside a 7z, which is why the
+archive type is a setting rather than a constant.
 
-Used by
-    `core.converters.registry` for `CompressionFormat.SEVEN_ZIP`.
-
-Reference
-    7-Zip command line switches:
-    https://documentation.help/7-Zip/
+7-Zip command line switches:
+https://documentation.help/7-Zip/
 """
 
 from __future__ import annotations

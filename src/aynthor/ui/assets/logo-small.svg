@@ -1,11 +1,10 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 256 256">
-  <defs>
-    <linearGradient id="plate" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#FFFFFF"/>
-      <stop offset="1" stop-color="#E6EBF2"/>
-    </linearGradient>
-  </defs>
-  <rect x="7" y="7" width="242" height="242" rx="60" fill="url(#plate)"
-        stroke="#B8C2D0" stroke-width="10"/>
-  <path d="M152 22 L64 142 L122 142 L102 236 L192 108 L136 108 Z" fill="#2563EB"/>
+  <rect x="4" y="4" width="248" height="248" rx="56" fill="#EE5A24"/>
+  <path d="M66 40 L162 40 L200 76 C214 112 214 160 200 196 C198 208 190 216 178 216
+           L78 216 C66 216 58 208 56 196 C42 160 42 112 56 76 C56 52 56 40 66 40 Z"
+        fill="#FFF3E6"/>
+  <rect x="72" y="66" width="112" height="108" rx="18" fill="#2A1A12"/>
+  <path d="M94 112 L114 112" stroke="#FFF3E6" stroke-width="22" stroke-linecap="round"/>
+  <path d="M142 112 L162 112" stroke="#FFF3E6" stroke-width="22" stroke-linecap="round"/>
+  <path d="M108 148 L148 148" stroke="#EE5A24" stroke-width="16" stroke-linecap="round"/>
 </svg>

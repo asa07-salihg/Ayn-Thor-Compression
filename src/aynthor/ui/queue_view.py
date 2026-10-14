@@ -1,22 +1,17 @@
 """The queue tree: game folders, the files inside them, and what they saved.
 
-Why
-    The table is the app, but a flat list hid the layout the card actually
-    uses. Each game is a folder named like its primary file, extra discs and
-    DLC sit inside, and a dump the app could not group is fixed by dropping it
-    onto that folder. Empty folders sink to the bottom of each level so the
-    titles that are actually queued stay in view. Start only runs the file
-    rows; folder rows are drop targets.
+The table is the app, but a flat list hid the layout the card actually
+uses. Each game is a folder named like its primary file, extra discs and
+DLC sit inside, and a dump the app could not group is fixed by dropping it
+onto that folder. Empty folders sink to the bottom of each level so the
+titles that are actually queued stay in view. Start only runs the file
+rows; folder rows are drop targets.
 
-    There is no format selector anywhere else in the window, because the format
-    belongs to the file rather than to the app.
+There is no format selector anywhere else in the window, because the format
+belongs to the file rather than to the app.
 
-Used by
-    `ui.main_window`.
-
-Reference
-    ES-DE "Directories interpreted as files".
-    Output naming: `core.output`.
+ES-DE "Directories interpreted as files".
+Output naming: `core.output`.
 """
 
 from __future__ import annotations
@@ -55,7 +50,7 @@ from aynthor.core.esde import (
     PLATFORM_MENU_GROUPS,
 )
 from aynthor.core.explain import explain_failure
-from aynthor.core.formats import FORMAT_CATALOG, FormatInfo, format_info, natural_mode
+from aynthor.core.formats import FORMAT_CATALOG, FormatInfo, format_info
 from aynthor.core.groups import (
     assign_to_folder,
     best_disk_game_folder,
@@ -69,6 +64,7 @@ from aynthor.core.groups import (
     rename_game_folder as rename_disk_game_folder,
 )
 from aynthor.core.intake import queue_items_for
+from aynthor.core.intake import row_mode as default_mode
 from aynthor.core.models import CompressionFormat, ConversionMode, QueueItem
 from aynthor.core.modes import (
     FORMAT_MODES,
@@ -89,6 +85,7 @@ from aynthor.core.output import (
 )
 from aynthor.core.presets import PRESETS, detect_platform_format
 from aynthor.core.settings import FormatSettings
+from aynthor.core.sheets import disc_size
 from aynthor.core.switch import (
     ContentType,
     canonical_title,
@@ -115,6 +112,9 @@ _ROLE_FOLDER_KEY = Qt.ItemDataRole.UserRole + 11
 _ROLE_TITLE_FAMILY = Qt.ItemDataRole.UserRole + 12
 _ROLE_DISK_ANCHOR = Qt.ItemDataRole.UserRole + 13
 _ROLE_FAILURE = Qt.ItemDataRole.UserRole + 14
+# Set once the user picks Move, Open or Convert for a row by hand. Until then
+# the row follows where games go, and changing that changes its direction.
+_ROLE_PICKED = Qt.ItemDataRole.UserRole + 15
 
 _KIND_FILE = "file"
 _KIND_FOLDER = "folder"
@@ -124,6 +124,7 @@ STATUS_WORKING = "Working..."
 STATUS_DONE = "Done"
 STATUS_FAILED = "Failed"
 STATUS_SKIPPED = "Skipped"
+STATUS_SENDING = "Sending"
 _STATUS_ON_CARD = "Already there"
 _PLATFORM_UNKNOWN = "Choose..."
 
@@ -153,6 +154,14 @@ def _folder_depth(path: Path, root: Path | None) -> int:
         return len(path.parts)
 
 
+def _nothing_to_do(path: Path, output: Path, fmt: CompressionFormat | None,
+                   mode: ConversionMode, member: str) -> bool:
+    """Converting this row would write the file it reads. The batch skips it;
+    the row should say so before Start, not after."""
+    return (fmt is not None and fmt is not CompressionFormat.NDS_TRIM and not member
+            and mode is not ConversionMode.DECOMPRESS and output == path)
+
+
 def _platform_label(platform: str) -> str:
     if not platform:
         return ""
@@ -163,17 +172,27 @@ def _platform_label(platform: str) -> str:
 
 
 class _BecomesDelegate(QStyledItemDelegate):
-    """Draws the Becomes cell as something you can click."""
+    """Draws the Becomes cell as something you can click. With `chip` on, the
+    format is a tag, so a column of CHD, RVZ and NSZ reads at a glance."""
 
     CHEVRON_WIDTH = 16
 
+    def __init__(self, parent=None, *, chip: bool = False) -> None:
+        super().__init__(parent)
+        self._chip = chip
+
     def paint(self, painter: QPainter, option: QStyleOptionViewItem,
               index: QModelIndex) -> None:
-        shifted = QStyleOptionViewItem(option)
-        shifted.rect = option.rect.adjusted(self.CHEVRON_WIDTH, 0, 0, 0)
-        super().paint(painter, shifted, index)
+        text = index.data(Qt.ItemDataRole.DisplayRole) or ""
+        is_file = index.siblingAtColumn(0).data(_ROLE_KIND) == _KIND_FILE
+        if self._chip and text and is_file:
+            self._paint_chip(painter, option, index, text)
+        else:
+            shifted = QStyleOptionViewItem(option)
+            shifted.rect = option.rect.adjusted(self.CHEVRON_WIDTH, 0, 0, 0)
+            super().paint(painter, shifted, index)
 
-        if not index.data(Qt.ItemDataRole.DisplayRole):
+        if not text:
             return
 
         painter.save()
@@ -186,17 +205,70 @@ class _BecomesDelegate(QStyledItemDelegate):
         painter.drawLine(box.center().x(), box.bottom(), box.right(), box.top())
         painter.restore()
 
+    def _paint_chip(self, painter: QPainter, option: QStyleOptionViewItem,
+                    index: QModelIndex, text: str) -> None:
+        opt = QStyleOptionViewItem(option)
+        self.initStyleOption(opt, index)
+        opt.text = ""
+        style = opt.widget.style() if opt.widget is not None else None
+        if style is not None:
+            style.drawControl(QStyle.ControlElement.CE_ItemViewItem, opt, painter, opt.widget)
+
+        if text == "Already done":
+            fill, ink = None, theme.color("textThird")
+        elif text == "?":
+            fill, ink = theme.color("warn"), theme.color("warn")
+        elif text == "Move":
+            fill, ink = theme.color("textThird"), theme.color("text")
+        else:
+            fill, ink = theme.color("accent"), theme.color("accent")
+
+        painter.save()
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        font = QFont(opt.font)
+        font.setWeight(QFont.Weight.DemiBold)
+        if font.pixelSize() > 0:
+            font.setPixelSize(max(11, round(font.pixelSize() * 0.82)))
+        elif font.pointSizeF() > 0:
+            font.setPointSizeF(max(8.0, font.pointSizeF() * 0.82))
+        painter.setFont(font)
+        metrics = painter.fontMetrics()
+        area = QRectF(option.rect).adjusted(self.CHEVRON_WIDTH + 2, 0, -6, 0)
+        width = min(area.width(), metrics.horizontalAdvance(text) + 16.0)
+        height = min(area.height() - 8, metrics.height() + 6.0)
+        chip = QRectF(area.left(), area.center().y() - height / 2, width, height)
+        if fill is not None:
+            fill.setAlpha(46 if text != "Move" else 34)
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(fill)
+            painter.drawRoundedRect(chip, height / 2, height / 2)
+            painter.setPen(ink)
+            painter.drawText(chip, Qt.AlignmentFlag.AlignCenter,
+                             metrics.elidedText(text, Qt.TextElideMode.ElideRight,
+                                                int(chip.width() - 12)))
+        else:
+            painter.setPen(ink)
+            painter.drawText(area, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
+                             text)
+        painter.restore()
+
     def sizeHint(self, option: QStyleOptionViewItem, index: QModelIndex):
         hint = super().sizeHint(option, index)
-        hint.setWidth(hint.width() + self.CHEVRON_WIDTH)
+        hint.setWidth(hint.width() + self.CHEVRON_WIDTH + (24 if self._chip else 0))
         return hint
 
 
 def status_kind(text: str) -> tuple[str, int]:
-    """How a Status cell is drawn: `progress` with a percentage, or `done`,
-    `failed`, `working` or `plain` with 0."""
+    """How a Status cell is drawn: `progress` or `sending` with a percentage,
+    or `done`, `failed`, `skipped`, `working` or `plain` with 0."""
+    kind = "progress"
+    if text.startswith(f"{STATUS_SENDING} "):
+        text = text[len(STATUS_SENDING) + 1:]
+        kind = "sending"
     if text.endswith("%") and text[:-1].isdigit():
-        return "progress", max(0, min(100, int(text[:-1])))
+        return kind, max(0, min(100, int(text[:-1])))
+    if text == STATUS_SKIPPED:
+        return "skipped", 0
     if text == STATUS_DONE:
         return "done", 0
     if text == STATUS_FAILED:
@@ -227,9 +299,23 @@ class _StatusDelegate(QStyledItemDelegate):
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         area = QRectF(opt.rect).adjusted(6, 0, -8, 0)
         middle = area.center().y()
-        if kind == "progress":
+        if kind in ("progress", "sending"):
             label_width = 38.0
-            track = QRectF(area.left(), middle - 3, max(10.0, area.width() - label_width), 6)
+            left = area.left()
+            if kind == "sending":
+                # An arrow up: the file is on its way to the device, which is
+                # a different wait from converting and can stall for a
+                # different reason (a locked screen).
+                pen = QPen(theme.color("accent"), 1.6)
+                pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+                painter.setPen(pen)
+                x = left + 5
+                painter.drawLine(QPointF(x, middle + 5), QPointF(x, middle - 5))
+                painter.drawLine(QPointF(x - 3.5, middle - 1.5), QPointF(x, middle - 5))
+                painter.drawLine(QPointF(x + 3.5, middle - 1.5), QPointF(x, middle - 5))
+                left += 14
+            track = QRectF(left, middle - 3,
+                           max(10.0, area.right() - left - label_width), 6)
             painter.setPen(Qt.PenStyle.NoPen)
             painter.setBrush(theme.color("subtleHover"))
             painter.drawRoundedRect(track, 3, 3)
@@ -241,6 +327,16 @@ class _StatusDelegate(QStyledItemDelegate):
             painter.drawText(
                 QRectF(track.right(), area.top(), area.right() - track.right(), area.height()),
                 Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter, f"{percent}%")
+        elif kind == "skipped":
+            colour = theme.color("textThird")
+            icon = QRectF(area.left(), middle - 7, 14, 14)
+            painter.setPen(QPen(colour, 1.6))
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.drawEllipse(icon)
+            painter.drawLine(QPointF(icon.left() + 4, middle), QPointF(icon.right() - 4, middle))
+            painter.drawText(area.adjusted(icon.width() + 6, 0, 0, 0),
+                             Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
+                             STATUS_SKIPPED)
         elif kind == "working":
             painter.setPen(theme.color("accent"))
             painter.drawText(area, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
@@ -306,6 +402,9 @@ class QueueTable(QTreeWidget):
     queue_changed = Signal()
     settings_requested = Signal(object)
     failure_clicked = Signal(int)
+    # Files or folders dragged in from Explorer: the paths, and the game
+    # folder row they were dropped on (or None).
+    paths_dropped = Signal(list, object)
 
     (COL_FILE, COL_GAME, COL_TYPE, COL_PLATFORM,
      COL_BECOMES, COL_SIZE, COL_SAVED, COL_STATUS) = range(8)
@@ -361,7 +460,8 @@ class QueueTable(QTreeWidget):
         self.customContextMenuRequested.connect(self._show_menu)
 
         for column in self._CLICKABLE:
-            self.setItemDelegateForColumn(column, _BecomesDelegate(self))
+            self.setItemDelegateForColumn(
+                column, _BecomesDelegate(self, chip=column == self.COL_BECOMES))
         self.setItemDelegateForColumn(self.COL_STATUS, _StatusDelegate(self))
         self.setMouseTracking(True)
         self.itemClicked.connect(self._on_item_clicked)
@@ -374,8 +474,8 @@ class QueueTable(QTreeWidget):
             (self.COL_FILE, QHeaderView.ResizeMode.Stretch, 0),
             (self.COL_GAME, QHeaderView.ResizeMode.Interactive, 150),
             (self.COL_TYPE, QHeaderView.ResizeMode.ResizeToContents, 0),
-            (self.COL_PLATFORM, QHeaderView.ResizeMode.Interactive, 160),
-            (self.COL_BECOMES, QHeaderView.ResizeMode.Interactive, 130),
+            (self.COL_PLATFORM, QHeaderView.ResizeMode.Interactive, 176),
+            (self.COL_BECOMES, QHeaderView.ResizeMode.Interactive, 124),
             (self.COL_SIZE, QHeaderView.ResizeMode.Interactive, 84),
             (self.COL_SAVED, QHeaderView.ResizeMode.Interactive, 76),
             (self.COL_STATUS, QHeaderView.ResizeMode.Interactive, 124),
@@ -403,6 +503,7 @@ class QueueTable(QTreeWidget):
         self._queued: set[tuple[Path, str]] = set()
         self._total_bytes = 0
         self._next_id = 1
+        self._drop_hover: QTreeWidgetItem | None = None
         self._by_id: dict[int, QTreeWidgetItem] = {}
         self._join_decisions: dict[str, bool] = {}
 
@@ -538,10 +639,7 @@ class QueueTable(QTreeWidget):
             folder.addChild(node)
             self._by_id[item_id] = node
             self._queued.add((member, ""))
-            try:
-                size = member.stat().st_size
-            except OSError:
-                size = 0
+            size = disc_size(member)
             # Deliberately not added to `_total_bytes`: this file is already
             # where it belongs and nothing will be done to it.
             self._numeric(node, self.COL_SIZE, human_size(size), size)
@@ -603,7 +701,7 @@ class QueueTable(QTreeWidget):
             if self._already_queued(path):
                 continue
             options = self._with_switch_metadata(path, fmt, dict(options))
-            mode = natural_mode(path, fmt)
+            mode = default_mode(path, fmt, options, settings)
             platform = detect_platform_format(path).platform or ""
             self._append(QueueItem(
                 path=path,
@@ -955,10 +1053,7 @@ class QueueTable(QTreeWidget):
         self._by_id[item_id] = node
         size = item.source_bytes if item.source_bytes > 0 else 0
         if size <= 0:
-            try:
-                size = item.path.stat().st_size
-            except OSError:
-                size = 0
+            size = disc_size(item.path)
         self._queued.add((item.path, item.member))
         self._total_bytes += max(0, size)
         self._numeric(node, self.COL_SIZE, human_size(size), size)
@@ -1278,7 +1373,10 @@ class QueueTable(QTreeWidget):
         archive = source_is_archive(path, member)
         intent = str(options.get("intent", ""))
         label = becomes_label(fmt, mode, from_archive=archive, intent=intent)
-        if not label:
+        idle = _nothing_to_do(path, output, fmt, mode, member)
+        if idle:
+            label = "Already done"
+        elif not label:
             label = info.label if info else "?"
             if mode == ConversionMode.DECOMPRESS and fmt is not None:
                 label = f"{label} ({self._verb(fmt, mode).lower()})"
@@ -1286,10 +1384,19 @@ class QueueTable(QTreeWidget):
                 label = output.suffix.lstrip(".").upper()
         node.setText(self.COL_BECOMES, label)
         node.setData(self.COL_BECOMES, _ROLE_PATH, output)
-        node.setToolTip(
-            self.COL_BECOMES,
-            f"{self._becomes_tip(info, mode, intent)}\n\nWrites:\n{output}")
-        node.setToolTip(self.COL_FILE, f"{path}\n\nWrites:\n{output}")
+        if idle:
+            tip = (f"It's already a {path.suffix.lstrip('.')} in the right folder, so "
+                   "Start leaves it alone. Choose an SD card or a handheld under "
+                   "Games go to and it's copied there instead.")
+            node.setToolTip(self.COL_BECOMES, tip)
+            node.setToolTip(self.COL_FILE, f"{path}\n\n{tip}")
+            node.setForeground(self.COL_BECOMES, QBrush(theme.color("textThird")))
+        else:
+            node.setToolTip(
+                self.COL_BECOMES,
+                f"{self._becomes_tip(info, mode, intent)}\n\nWrites:\n{output}")
+            node.setToolTip(self.COL_FILE, f"{path}\n\nWrites:\n{output}")
+            node.setData(self.COL_BECOMES, Qt.ItemDataRole.ForegroundRole, None)
 
         item.output = output
         grouped = self._is_folder(node.parent())
@@ -1308,6 +1415,19 @@ class QueueTable(QTreeWidget):
             return "Turned back into the original, uncompressed file."
         return info.plain if info else ""
 
+    def drawRow(self, painter: QPainter, option, index: QModelIndex) -> None:
+        """A console folder is a heading for the games under it, so it gets a
+        band across the whole row. Painted here rather than set on the item,
+        so it follows a switch between light and dark."""
+        first = index.siblingAtColumn(0)
+        if (first.data(_ROLE_KIND) == _KIND_FOLDER
+                and first.data(_ROLE_FOLDER_KIND) == "platform"):
+            band = theme.color("text")
+            band.setAlpha(14)
+            painter.fillRect(QRect(0, option.rect.top(), self.viewport().width(),
+                                   option.rect.height()), band)
+        super().drawRow(painter, option, index)
+
     def _refresh_row(self, row: int) -> None:
         self._refresh_item(self.files()[row])
 
@@ -1315,8 +1435,25 @@ class QueueTable(QTreeWidget):
         self._settings = settings
         forget_roms_root()
         for node in self.files():
+            if not node.data(self.COL_BECOMES, _ROLE_PICKED) and not self._is_on_disk(node):
+                self._follow_destination(node)
             self._refresh_item(node)
         self.apply_empty_folder_setting()
+
+    def _follow_destination(self, node: QTreeWidgetItem) -> None:
+        """Give the row the direction it would have had if it were added now.
+
+        A `.chd` added with nowhere to send it is a request to open it; pick a
+        card or a handheld afterwards and it should go there as it is, not stay
+        a request nobody made."""
+        fmt = self._format_of(node)
+        if fmt is None:
+            return
+        node.setData(self.COL_BECOMES, _ROLE_PICKED, False)
+        mode = default_mode(node.data(self.COL_FILE, _ROLE_PATH), fmt,
+                        node.data(self.COL_FILE, _ROLE_OPTIONS) or {}, self._settings,
+                        node.data(self.COL_FILE, _ROLE_MEMBER) or "")
+        node.setData(self.COL_BECOMES, _ROLE_MODE, mode.value)
 
     def apply_empty_folder_setting(self) -> int:
         """Drop empty folder nodes when the setting is off. Returns how many
@@ -1363,14 +1500,11 @@ class QueueTable(QTreeWidget):
                 continue
             node = files[row]
             node.setData(self.COL_BECOMES, _ROLE_FORMAT, fmt.value)
-            node.setData(self.COL_BECOMES, _ROLE_MODE, ConversionMode.COMPRESS.value)
-            options = dict(node.data(self.COL_FILE, _ROLE_OPTIONS) or {})
-            options.pop("intent", None)
-            node.setData(self.COL_FILE, _ROLE_OPTIONS, options)
             self._reset_options(node, fmt)
             options = dict(node.data(self.COL_FILE, _ROLE_OPTIONS) or {})
             options.pop("intent", None)
             node.setData(self.COL_FILE, _ROLE_OPTIONS, options)
+            self._follow_destination(node)
             self._refresh_item(node)
             self.update_status(node.data(self.COL_FILE, _ROLE_ID), STATUS_READY)
             parent = node.parent()
@@ -1395,6 +1529,7 @@ class QueueTable(QTreeWidget):
                 # `Cart.out`.
                 continue
             node.setData(self.COL_BECOMES, _ROLE_MODE, mode.value)
+            node.setData(self.COL_BECOMES, _ROLE_PICKED, True)
             options = dict(node.data(self.COL_FILE, _ROLE_OPTIONS) or {})
             if intent:
                 options["intent"] = intent
@@ -1587,18 +1722,74 @@ class QueueTable(QTreeWidget):
         self._by_id.clear()
         self._total_bytes = 0
         self._next_id = 1
+        self._drop_hover = None
         self.queue_changed.emit()
 
     # ---------------------------------------------------------- drag and drop
 
+    @staticmethod
+    def dropped_paths(event) -> list[Path]:
+        """Local files and folders in a drag from outside the app."""
+        mime = event.mimeData()
+        if not mime.hasUrls():
+            return []
+        return [Path(url.toLocalFile()) for url in mime.urls() if url.isLocalFile()]
+
+    def _from_outside(self, event) -> bool:
+        return event.source() is not self and bool(self.dropped_paths(event))
+
+    def dragEnterEvent(self, event) -> None:
+        # The queue reorders its own rows by dragging, which made Qt turn away
+        # anything dragged in from Explorer once the queue had a single row.
+        if self._from_outside(event):
+            event.setDropAction(Qt.DropAction.CopyAction)
+            event.accept()
+            return
+        super().dragEnterEvent(event)
+
     def dragMoveEvent(self, event) -> None:
+        if self._from_outside(event):
+            target = self._drop_folder(self.itemAt(event.position().toPoint()))
+            self._hover_drop(target if self._is_game_node(target) else None)
+            event.setDropAction(Qt.DropAction.CopyAction)
+            event.accept()
+            return
         target = self.itemAt(event.position().toPoint())
         if target is None or self._is_folder(target) or self._is_file(target):
             event.acceptProposedAction()
             return
         event.ignore()
 
+    def dragLeaveEvent(self, event) -> None:
+        self._hover_drop(None)
+        super().dragLeaveEvent(event)
+
+    def _hover_drop(self, folder: QTreeWidgetItem | None) -> None:
+        """Show which game the dragged files would join."""
+        previous = self._drop_hover
+        if previous is folder:
+            return
+        if previous is not None:
+            for column in range(self.columnCount()):
+                previous.setData(column, Qt.ItemDataRole.BackgroundRole, None)
+        self._drop_hover = folder
+        if folder is not None:
+            tint = theme.color("accent")
+            tint.setAlpha(40)
+            for column in range(self.columnCount()):
+                folder.setBackground(column, QBrush(tint))
+
     def dropEvent(self, event) -> None:
+        if self._from_outside(event):
+            self._hover_drop(None)
+            target = self._drop_folder(self.itemAt(event.position().toPoint()))
+            paths = [p for p in self.dropped_paths(event) if p.exists()]
+            event.setDropAction(Qt.DropAction.CopyAction)
+            event.accept()
+            if paths:
+                self.paths_dropped.emit(
+                    paths, target if self._is_game_node(target) else None)
+            return
         target = self.itemAt(event.position().toPoint())
         games = [n for n in self.selectedItems() if self._is_game_node(n)]
         files = [n for n in self.selectedItems() if self._is_file(n)]
@@ -1628,6 +1819,43 @@ class QueueTable(QTreeWidget):
         event.accept()
         self.apply_empty_folder_setting()
         self.queue_changed.emit()
+
+    def last_id(self) -> int:
+        """Rows added after this was read have bigger ids."""
+        return self._next_id - 1
+
+    def adopt(self, folder: QTreeWidgetItem, after: int) -> int:
+        """Move the rows added since `after` into a game folder, as if they had
+        been dragged onto it from inside the queue. Dropping a disc 2 from
+        Explorer onto the game it belongs to does what it looks like.
+
+        Only rows of the folder's platform join; a stray file dropped with them
+        stays where it was put. Returns how many joined."""
+        if not self._is_game_node(folder):
+            return 0
+        platform = folder.data(self.COL_FILE, _ROLE_PLATFORM) or ""
+        joined: list[QTreeWidgetItem] = []
+        for node in self.files():
+            row_id = node.data(self.COL_FILE, _ROLE_ID)
+            if row_id is None or row_id <= after or self._is_on_disk(node):
+                continue
+            if node.parent() is folder:
+                continue
+            own = node.data(self.COL_PLATFORM, _ROLE_PLATFORM) or ""
+            if platform and own and own != platform:
+                continue
+            old_parent = node.parent()
+            self._reparent(node, folder)
+            self._sync_node(node)
+            if old_parent is not None and self._is_folder(old_parent):
+                self._align_folder(old_parent)
+            joined.append(node)
+        if joined:
+            self._align_folder(folder)
+            self._reveal_part_column()
+            self.apply_empty_folder_setting()
+            self.queue_changed.emit()
+        return len(joined)
 
     def merge_game_folders(
         self, source: QTreeWidgetItem, target: QTreeWidgetItem,
@@ -1898,11 +2126,11 @@ class QueueTable(QTreeWidget):
             if preset is not None and preset.format in {
                     i.format for i in self._accepted_formats(row)}:
                 node.setData(self.COL_BECOMES, _ROLE_FORMAT, preset.format.value)
-                node.setData(self.COL_BECOMES, _ROLE_MODE, ConversionMode.COMPRESS.value)
                 self._reset_options(node, preset.format, preset.options)
                 options = dict(node.data(self.COL_FILE, _ROLE_OPTIONS) or {})
                 options.pop("intent", None)
                 node.setData(self.COL_FILE, _ROLE_OPTIONS, options)
+                self._follow_destination(node)
             self._refresh_item(node)
             self.update_status(node.data(self.COL_FILE, _ROLE_ID), STATUS_READY)
             parent = node.parent()

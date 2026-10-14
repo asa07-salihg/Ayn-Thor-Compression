@@ -1,29 +1,24 @@
 """Every external tool the app can fetch: where from, and what it must hash to.
 
-Why
-    This app downloads executables from the internet and runs them. Before this
-    manifest existed it fetched whatever a URL returned and wrote it straight
-    into `tools/`, which means a hijacked release asset, a compromised mirror
-    or a captive-portal HTML page would all have been installed without a
-    complaint. Every file therefore carries a SHA-256 taken from the exact
-    pinned release, and `manager` refuses to install a file that does not match.
+This app downloads executables from the internet and runs them. Before this
+manifest existed it fetched whatever a URL returned and wrote it straight
+into `tools/`, which means a hijacked release asset, a compromised mirror
+or a captive-portal HTML page would all have been installed without a
+complaint. Every file therefore carries a SHA-256 taken from the exact
+pinned release, and `manager` refuses to install a file that does not match.
 
-    Two consequences worth knowing about:
+Two consequences worth knowing about:
 
-    * Versions are pinned. Upgrading a tool is a deliberate edit here, with a
-      new checksum, not something that happens silently on a user's machine.
-    * One entry has no checksum. Dolphin publishes its Windows builds only from
-      its own server, with no signature or published digest, so there is
-      nothing to pin against. `manager` installs it with a warning, and the
-      Tools dialog offers to copy DolphinTool.exe out of an existing Dolphin
-      install instead. See THIRD-PARTY-NOTICES.md.
+* Versions are pinned. Upgrading a tool is a deliberate edit here, with a
+  new checksum, not something that happens silently on a user's machine.
+* One entry has no checksum. Dolphin publishes its Windows builds only from
+  its own server, with no signature or published digest, so there is
+  nothing to pin against. `manager` installs it with a warning, and the
+  Tools dialog offers to copy DolphinTool.exe out of an existing Dolphin
+  install instead. See THIRD-PARTY-NOTICES.md.
 
-Used by
-    `core.tools.manager.ToolsManager`, `ui.tools_dialog`.
-
-Reference
-    Each entry's `homepage` is the upstream project. Checksums were taken from
-    the pinned artifacts; THIRD-PARTY-NOTICES.md records how to re-derive them.
+Each entry's `homepage` is the upstream project. Checksums were taken from
+the pinned artifacts; THIRD-PARTY-NOTICES.md records how to re-derive them.
 """
 
 from __future__ import annotations

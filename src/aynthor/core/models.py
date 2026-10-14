@@ -1,19 +1,13 @@
 """The data every other module passes around: formats, modes, jobs, queue rows.
 
-Why
-    These four types are the only things `core` and `ui` both need to agree on.
-    Keeping them in one leaf module means `core` never has to import from `ui`
-    to describe a queue row, and `ui` never has to import a converter to
-    describe a job. Before this module existed, `ConversionMode` was declared
-    twice (in `types.py` and in `conversion_modes.py`) and `QueueItem` lived in
-    a Qt widget file that `core.jobs` had to import under `TYPE_CHECKING`.
+These four types are the only things `core` and `ui` both need to agree on.
+Keeping them in one leaf module means `core` never has to import from `ui`
+to describe a queue row, and `ui` never has to import a converter to
+describe a job. Before this module existed, `ConversionMode` was declared
+twice (in `types.py` and in `conversion_modes.py`) and `QueueItem` lived in
+a Qt widget file that `core.jobs` had to import under `TYPE_CHECKING`.
 
-Used by
-    Everything. `core.formats`, `core.jobs`, `core.presets`, every converter,
-    and every widget under `ui/`.
-
-Reference
-    No external spec: this is the app's own vocabulary.
+No external spec: this is the app's own vocabulary.
 """
 
 from __future__ import annotations
@@ -73,6 +67,9 @@ class ConversionJob:
     # ROM inside it. The runner unpacks the archive and hands the converter the
     # extracted file; the converter never learns there was an archive at all.
     member: str = ""
+    # Where on the device the result goes, relative to the device's ROMs
+    # folder, `/`-separated. Empty for a job that stays on this PC.
+    remote: str = ""
     status: str = "pending"
     message: str = ""
     input_size: int = 0

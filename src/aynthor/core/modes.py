@@ -1,24 +1,18 @@
 """What each direction is called, per format.
 
-Why
-    One verb does not cover all of these. A `.7z` is unzipped, a `.chd` is
-    decompressed, a `.nds` is trimmed, and a `.cia` is decrypted; calling every
-    one of them "open" told the user nothing about what they were about to get.
-    So the label shows the destination (`-> CUE/ISO`) and the verb is the one
-    that belongs to that format, which is what the queue and its menu print.
+One verb does not cover all of these. A `.7z` is unzipped, a `.chd` is
+decompressed, a `.nds` is trimmed, and a `.cia` is decrypted; calling every
+one of them "open" told the user nothing about what they were about to get.
+So the label shows the destination (`-> CUE/ISO`) and the verb is the one
+that belongs to that format, which is what the queue and its menu print.
 
-    Formats with one direction (WUA, Decrypt 3DS, NDS trim) declare exactly one
-    entry, so nothing offers a reverse that does not exist.
+Formats with one direction (WUA, Decrypt 3DS, NDS trim) declare exactly one
+entry, so nothing offers a reverse that does not exist.
 
-    A RAR/ZIP that was peeked into an NSZ row still offers Unzip (extract the
-    member, do not compress), not Decompress. That word is for containers.
+A RAR/ZIP that was peeked into an NSZ row still offers Unzip (extract the
+member, do not compress), not Decompress. That word is for containers.
 
-Used by
-    `ui.queue_view` (the Becomes cell and its menu),
-    `ui.option_panels.BaseFormatPanel`.
-
-Reference
-    Direction support per tool: each converter module says what it can undo.
+Direction support per tool: each converter module says what it can undo.
 """
 
 from __future__ import annotations

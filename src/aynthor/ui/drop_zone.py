@@ -1,19 +1,15 @@
 """The drop target at the top of the window.
 
-Why
-    Dragging a folder in is how this app is used, so that has to be the most
-    obvious thing on the screen rather than a hint painted behind an empty
-    table. It is also the only place the three ways of adding files live, which
-    is why there is no toolbar anywhere else.
+Dragging a folder in is how this app is used, so that has to be the most
+obvious thing on the screen rather than a hint painted behind an empty
+table. It is also the only place the three ways of adding files live, which
+is why there is no toolbar anywhere else.
 
-    It has two sizes. Empty, it fills the top of the window and says what to
-    do, with the whole job laid out as three numbered steps for someone who
-    has never used a tool like this. Once the queue has rows it shrinks to a
-    single strip, because at that point the table is what the user is looking
-    at and a large empty rectangle above it is wasted screen.
-
-Used by
-    `ui.main_window`.
+It has two sizes. Empty, it fills the top of the window and says what to
+do, with the whole job laid out as three numbered steps for someone who
+has never used a tool like this. Once the queue has rows it shrinks to a
+single strip, because at that point the table is what the user is looking
+at and a large empty rectangle above it is wasted screen.
 """
 
 from __future__ import annotations
@@ -43,6 +39,7 @@ from PySide6.QtWidgets import (
 from aynthor.ui import icons, theme
 
 STEPS = ("Add your games", "Check what each one becomes", "Press Start")
+TAGS = ("CHD", "RVZ", "NSZ", "ZCCI", "CSO", "7z")
 
 
 class _DropIcon(QWidget):
@@ -124,11 +121,13 @@ class DropZone(QFrame):
 
         self.buttons = self._build_buttons()
         self.steps = self._build_steps()
+        self.tags = self._build_tags()
 
         self._layout.addStretch()
         self._layout.addWidget(self.intro)
         self._layout.addWidget(self.buttons, alignment=Qt.AlignmentFlag.AlignCenter)
         self._layout.addWidget(self.steps, alignment=Qt.AlignmentFlag.AlignCenter)
+        self._layout.addWidget(self.tags, alignment=Qt.AlignmentFlag.AlignCenter)
         self._layout.addStretch()
 
         self.set_compact(False)
@@ -194,6 +193,24 @@ class DropZone(QFrame):
             layout.addLayout(pair)
         return row
 
+    def _build_tags(self) -> QWidget:
+        """What comes out, in the words people search for, and where it can go."""
+        row = QWidget()
+        layout = QHBoxLayout(row)
+        layout.setContentsMargins(0, 18, 0, 0)
+        layout.setSpacing(6)
+        for text in TAGS:
+            tag = QLabel(text)
+            tag.setProperty("role", "tag")
+            layout.addWidget(tag)
+        usb = QLabel("USB to your handheld")
+        usb.setProperty("role", "tag")
+        usb.setProperty("accent", True)
+        usb.setToolTip("Click the destination at the bottom of the window and choose "
+                       "your handheld to send games straight onto it.")
+        layout.addWidget(usb)
+        return row
+
     def set_compact(self, compact: bool) -> None:
         """Tall while the queue is empty, a strip once it is not."""
         if compact:
@@ -202,8 +219,10 @@ class DropZone(QFrame):
         else:
             self.setMinimumHeight(self._MIN_TALL)
             self.setMaximumHeight(16777215)
-        for widget in (self.intro, self.steps):
+        for widget in (self.intro, self.steps, self.tags):
             widget.setVisible(not compact)
+        self.setProperty("compact", compact)
+        theme.restyle(self)
         self._spacer.setVisible(compact)
         self.expand_button.setVisible(compact)
         self.collapse_button.setVisible(compact)

@@ -1,23 +1,19 @@
 """The window: a drop zone, a queue, and a bar along the bottom.
 
-Why
-    One screen. The previous design had four permanent panels, and three of
-    them were showing something the user was not looking at: a format list they
-    had already decided about, an options panel they consult once a month, and
-    a log that only matters when something fails.
+One screen. The previous design had four permanent panels, and three of
+them were showing something the user was not looking at: a format list they
+had already decided about, an options panel they consult once a month, and
+a log that only matters when something fails.
 
-    So: the drop target is the largest thing on screen until there is something
-    in the queue, the queue is everything after that, and the bar at the bottom
-    holds the only two facts that stay true throughout a run (how much is
-    queued, how much has been saved) plus the one button that starts it.
-    Settings and the log are one click away and take no space until asked for.
+So: the drop target is the largest thing on screen until there is something
+in the queue, the queue is everything after that, and the bar at the bottom
+holds the only two facts that stay true throughout a run (how much is
+queued, how much has been saved) plus the one button that starts it.
+Settings and the log are one click away and take no space until asked for.
 
-    The format lives on the row, set by auto-detection and changed from the
-    row's own context menu. There is no global "selected format" anywhere,
-    which is what removed the retargeting rules the old design needed.
-
-Used by
-    `app.run`.
+The format lives on the row, set by auto-detection and changed from the
+row's own context menu. There is no global "selected format" anywhere,
+which is what removed the retargeting rules the old design needed.
 """
 
 from __future__ import annotations
@@ -25,7 +21,14 @@ from __future__ import annotations
 from pathlib import Path
 
 from PySide6.QtCore import QSize, Qt, QTimer, QUrl
-from PySide6.QtGui import QAction, QActionGroup, QDesktopServices, QKeySequence
+from PySide6.QtGui import (
+    QAction,
+    QActionGroup,
+    QDesktopServices,
+    QDragEnterEvent,
+    QDropEvent,
+    QKeySequence,
+)
 from PySide6.QtWidgets import (
     QApplication,
     QDialog,
@@ -44,6 +47,8 @@ from PySide6.QtWidgets import (
 )
 
 from aynthor import CHANGELOG_URL, __version__
+from aynthor.core.batch import Outcome
+from aynthor.core.device import com_thread, open_target
 from aynthor.core.esde import audit_folders, resolve_roms_root
 from aynthor.core.explain import Fix, explain_failure
 from aynthor.core.formats import file_dialog_filter, format_info, known_extensions
@@ -62,6 +67,8 @@ from aynthor.core.tools.manifest import SPECS_BY_KEY
 from aynthor.core.unpack import rom_files
 from aynthor.ui import icons, state, theme
 from aynthor.ui.about_dialog import AboutDialog
+from aynthor.ui.destination import DestinationDialog
+from aynthor.ui.destination import describe as describe_destination
 from aynthor.ui.drop_zone import DropZone
 from aynthor.ui.failure_dialog import FailureDialog
 from aynthor.ui.finish_dialog import FinishDialog
@@ -70,6 +77,7 @@ from aynthor.ui.preflight_dialog import PreflightDialog
 from aynthor.ui.queue_view import (
     STATUS_DONE,
     STATUS_FAILED,
+    STATUS_SENDING,
     STATUS_SKIPPED,
     STATUS_WORKING,
     QueueTable,
@@ -113,6 +121,7 @@ class MainWindow(QMainWindow):
         self._ok_count = 0
         self._failed_count = 0
         self._skipped_count = 0
+        self._sending: set[int] = set()
         self._cancelled = False
         self._last_output: Path | None = None
         self._finish_dialog: FinishDialog | None = None
@@ -150,6 +159,11 @@ class MainWindow(QMainWindow):
         self.drop_zone.expand_all.connect(self.queue.expandAll)
         self.drop_zone.collapse_all.connect(self.queue.collapseAll)
         content_layout.addWidget(self.queue_card, stretch=4)
+        self.queue.paths_dropped.connect(self._dropped_on_queue)
+        # Anywhere in the window takes a drop: the log, the header, the gap
+        # between the buttons. Widgets that take drops themselves (the drop
+        # zone, the queue) get them first.
+        self.setAcceptDrops(True)
         layout.addWidget(content, stretch=1)
 
         layout.addWidget(self._build_log())
@@ -288,9 +302,9 @@ class MainWindow(QMainWindow):
         row.addWidget(self.skipped_button)
 
         self.destination_button = QPushButton()
-        self.destination_button.setProperty("subtle", True)
+        self.destination_button.setProperty("pill", True)
         self.destination_button.setToolTip("Where finished games go. Click to change it.")
-        self.destination_button.clicked.connect(lambda: self._show_settings())
+        self.destination_button.clicked.connect(lambda: self._choose_destination())
         self._with_icon(self.destination_button, "folder")
         row.addWidget(self.destination_button)
 
@@ -440,16 +454,17 @@ class MainWindow(QMainWindow):
 
     def _refresh_destination(self) -> None:
         """Say where finished games will go, all the time, not only in Settings."""
-        if self.settings.esde_root:
-            where = str(resolve_roms_root(Path(self.settings.esde_root)))
-        elif self.settings.output_dir:
-            where = self.settings.output_dir
-        else:
-            self.destination_button.setText("Saving next to the original files")
-            return
+        text = describe_destination(self.settings)
         metrics = self.destination_button.fontMetrics()
-        shown = metrics.elidedText(where, Qt.TextElideMode.ElideMiddle, 320)
-        self.destination_button.setText(f"Saving to {shown}")
+        self.destination_button.setText(
+            metrics.elidedText(text, Qt.TextElideMode.ElideMiddle, 380))
+        self.destination_button.setToolTip(f"{text}\nClick to change where games go.")
+        name = "handheld" if self.settings.device is not None else "folder"
+        self._icon_buttons = [(b, name if b is self.destination_button else n, c)
+                              for b, n, c in self._icon_buttons]
+        self.destination_button.setIcon(icons.icon(name))
+        self.destination_button.setProperty("device", self.settings.device is not None)
+        theme.restyle(self.destination_button)
 
     def _refresh_tool_warning(self) -> None:
         """Which programs the queue needs that are not installed.
@@ -476,6 +491,27 @@ class MainWindow(QMainWindow):
         folder = QFileDialog.getExistingDirectory(self, "Add a folder")
         if folder:
             self._add([Path(folder)])
+
+    def dragEnterEvent(self, event: QDragEnterEvent) -> None:
+        if QueueTable.dropped_paths(event):
+            event.setDropAction(Qt.DropAction.CopyAction)
+            event.accept()
+
+    def dropEvent(self, event: QDropEvent) -> None:
+        paths = [p for p in QueueTable.dropped_paths(event) if p.exists()]
+        event.setDropAction(Qt.DropAction.CopyAction)
+        event.accept()
+        if paths:
+            self._add(paths)
+
+    def _dropped_on_queue(self, paths: list[Path], folder) -> None:
+        before = self.queue.last_id()
+        self._add(paths)
+        if folder is not None and all(p.is_file() for p in paths):
+            joined = self.queue.adopt(folder, before)
+            if joined:
+                self._log(f"Joined {joined} file{'s' if joined != 1 else ''} to "
+                          f"{folder.text(QueueTable.COL_FILE)}.")
 
     def _add(self, paths: list[Path]) -> None:
         extensions = known_extensions()
@@ -618,12 +654,8 @@ class MainWindow(QMainWindow):
                           self.settings)
         if not jobs:
             self.log_button.setChecked(True)
-            if skipped:
-                self._log("Nothing left to run: every file was skipped.")
-            else:
-                self._log("Nothing to do: every file is already there, and 'If the file "
-                          "is already there' is set to Skip. Change it in Settings to "
-                          "run them anyway.")
+            self._log("Nothing left to run: every file was skipped." if skipped
+                      else "Nothing to run.")
             return
 
         self._done = 0
@@ -642,10 +674,13 @@ class MainWindow(QMainWindow):
         self.start_button.hide()
         self.clear_button.setEnabled(False)
 
-        self._runner = JobRunner(jobs)
+        self._sending.clear()
+        self._runner = JobRunner(jobs, policy=self.settings.on_conflict,
+                                 device=self.settings.device)
         self._runner.log.connect(self._log)
         self._runner.job_started.connect(self._on_job_started)
         self._runner.job_progress.connect(self._on_job_progress)
+        self._runner.job_stage.connect(self._on_job_stage)
         self._runner.job_finished.connect(self._on_job_finished)
         self._runner.finished.connect(self._on_all_finished)
         self._runner.start()
@@ -653,7 +688,8 @@ class MainWindow(QMainWindow):
 
     def _preflight(self, queue: list[tuple[int, QueueItem]]) -> set[int] | None:
         """Rows to leave out of this run, or None when the user cancelled."""
-        problems = check_queue(queue, self.settings, is_available=self.tools.is_available)
+        problems = check_queue(queue, self.settings, is_available=self.tools.is_available,
+                               device_ready=self._device_ready)
         if not problems and not self.settings.delete_source:
             return set()
         dialog = PreflightDialog(problems, self.settings, self._recheck,
@@ -667,7 +703,23 @@ class MainWindow(QMainWindow):
     def _recheck(self) -> list[Problem]:
         self.tools.refresh()
         return check_queue(self.queue.queue_items(), self.settings,
-                           is_available=self.tools.is_available)
+                           is_available=self.tools.is_available,
+                           device_ready=self._device_ready)
+
+    def _device_ready(self) -> str:
+        """"" when the chosen device opens and has its storage, or why not.
+        Runs on this thread: it is a second or two of USB, once, before Start."""
+        target = self.settings.device
+        if target is None:
+            return ""
+        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+        try:
+            with com_thread() as runtime, open_target(target, runtime):
+                return ""
+        except OSError as exc:
+            return str(exc)
+        finally:
+            QApplication.restoreOverrideCursor()
 
     def _use_keys(self, path: Path) -> None:
         """Point every Switch row, and every one added later, at this prod.keys.
@@ -696,13 +748,26 @@ class MainWindow(QMainWindow):
 
     def _on_job_progress(self, row: int, percent: int) -> None:
         self._current_percent = percent
-        self.queue.update_status(row, f"{percent}%")
+        prefix = f"{STATUS_SENDING} " if row in self._sending else ""
+        self.queue.update_status(row, f"{prefix}{percent}%")
         self._update_progress()
 
-    def _on_job_finished(self, row: int, job: ConversionJob, ok: bool, message: str) -> None:
+    def _on_job_stage(self, row: int, stage: str) -> None:
+        self._sending.add(row)
+        self._log(f"  {stage}…")
+
+    def _on_job_finished(self, row: int, job: ConversionJob, outcome: str, message: str) -> None:
         self._done += 1
         self._current_percent = 0
+        self._sending.discard(row)
         self._update_progress()
+        ok = outcome != Outcome.FAILED.value
+        if outcome == Outcome.SKIPPED.value:
+            self._skipped_count += 1
+            self.queue.update_status(row, STATUS_SKIPPED, message)
+            self._log(f"SKIPPED  {job.input_path.name}: {message}")
+            self._refresh_summary()
+            return
         self.queue.update_status(row, STATUS_DONE if ok else STATUS_FAILED, message)
         if ok:
             self._ok_count += 1
@@ -759,7 +824,10 @@ class MainWindow(QMainWindow):
                 self._explain_failure(failed[0])
 
     def _results_folder(self) -> Path | None:
-        """The folder a user would open to find what this run wrote."""
+        """The folder a user would open to find what this run wrote. None for a
+        device, which has no folder Windows can open by path."""
+        if self.settings.device is not None:
+            return None
         if self.settings.esde_root:
             return resolve_roms_root(Path(self.settings.esde_root))
         if self.settings.output_dir:
@@ -821,6 +889,14 @@ class MainWindow(QMainWindow):
             if rows:
                 info = format_info(changed)
                 self._log(f"Applied {info.label} settings to {rows} queued row(s).")
+        self._refresh_summary()
+
+    def _choose_destination(self) -> None:
+        dialog = DestinationDialog(self.settings, self)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        self.queue.apply_settings(self.settings)
+        self._log(describe_destination(self.settings) + ".")
         self._refresh_summary()
 
     def _show_tools(self) -> None:

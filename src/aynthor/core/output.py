@@ -1,34 +1,29 @@
 """Where a converted file is written.
 
-Why
-    Three separate rules decide this and they have an order: an ES-DE ROMs
-    folder wins for a row that knows its platform, then a plain output folder,
-    then the input's own folder. Keeping them here rather than in the queue
-    widget is the same rule the rest of `core` follows, and it is why they can
-    be tested without Qt or a display server -- which is exactly what caught
-    them being in the wrong module.
+Three separate rules decide this and they have an order: an ES-DE ROMs
+folder wins for a row that knows its platform, then a plain output folder,
+then the input's own folder. Keeping them here rather than in the queue
+widget is the same rule the rest of `core` follows, and it is why they can
+be tested without Qt or a display server -- which is exactly what caught
+them being in the wrong module.
 
-    On top of those sits the game folder layout, which is how the card this app
-    was written for is actually organised:
+On top of those sits the game folder layout, which is how the card this app
+was written for is actually organised:
 
-        ROMs/psx/Final Fantasy VIII.chd/Final Fantasy VIII.chd
-        ROMs/psx/Final Fantasy VIII.chd/Final Fantasy VIII (Disc 2).chd
-        ROMs/switch/Mario Kart 8 Deluxe.nsp/Mario Kart 8 Deluxe.nsp
-        ROMs/switch/Mario Kart 8 Deluxe.nsp/sxs-mk8u_v1376256.nsp
+    ROMs/psx/Final Fantasy VIII.chd/Final Fantasy VIII.chd
+    ROMs/psx/Final Fantasy VIII.chd/Final Fantasy VIII (Disc 2).chd
+    ROMs/switch/Mario Kart 8 Deluxe.nsp/Mario Kart 8 Deluxe.nsp
+    ROMs/switch/Mario Kart 8 Deluxe.nsp/sxs-mk8u_v1376256.nsp
 
-    A folder named exactly like its primary file, extension included. ES-DE
-    calls this "directories interpreted as files": the folder shows as one
-    game, and launching it runs the file inside whose name matches the folder.
-    Extra discs, updates and DLC sit beside that file under their own names.
+A folder named exactly like its primary file, extension included. ES-DE
+calls this "directories interpreted as files": the folder shows as one
+game, and launching it runs the file inside whose name matches the folder.
+Extra discs, updates and DLC sit beside that file under their own names.
 
-Used by
-    `ui.queue_view`, for every row it renders.
-
-Reference
-    Output naming per format: `core.formats.suggest_output_path`.
-    ES-DE folder names: `core.esde`.
-    ES-DE user guide, "Directories interpreted as files":
-    https://gitlab.com/es-de/emulationstation-de/-/blob/master/USERGUIDE.md
+Output naming per format: `core.formats.suggest_output_path`.
+ES-DE folder names: `core.esde`.
+ES-DE user guide, "Directories interpreted as files":
+https://gitlab.com/es-de/emulationstation-de/-/blob/master/USERGUIDE.md
 """
 
 from __future__ import annotations
@@ -38,6 +33,7 @@ from functools import lru_cache
 from pathlib import Path, PurePosixPath
 
 from aynthor.core import esde
+from aynthor.core.device.deliver import staging_root
 from aynthor.core.esde import ESDE_PLATFORM_FOLDERS
 from aynthor.core.formats import known_extensions, suggest_output_path
 from aynthor.core.models import CompressionFormat, ConversionMode
@@ -347,9 +343,23 @@ def platform_destination(
     return _destination(settings, platform, path or Path("."))
 
 
+def device_staging(settings: FormatSettings) -> Path | None:
+    """The folder on this PC that stands in for the device's ROMs folder, or
+    None when games are not going to a device."""
+    if settings.device is None:
+        return None
+    base = Path(settings.staging_dir) if settings.staging_dir else None
+    return staging_root(settings.device, base)
+
+
 def _destination(settings: FormatSettings, platform: str, path: Path) -> Path | None:
     """The folder a result goes in, or None to leave it beside its input."""
-    if settings.esde_root and platform:
+    staging = device_staging(settings)
+    if staging is not None and platform:
+        folders = ESDE_PLATFORM_FOLDERS.get(platform)
+        if folders:
+            return staging / folders[0]
+    if settings.esde_root and platform and staging is None:
         folders = ESDE_PLATFORM_FOLDERS.get(platform)
         if folders:
             return _roms_root(settings.esde_root) / folders[0]

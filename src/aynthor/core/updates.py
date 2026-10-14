@@ -1,30 +1,25 @@
 """Check GitHub for a newer release, and install it.
 
-Why
-    The app is a single exe with no installer, which is what makes it easy to
-    put on a card and hard to keep current: nothing tells the user a new build
-    exists. So it asks GitHub itself, the same way an external release tracker
-    would, and can replace itself with what it finds.
+The app is a single exe with no installer, which is what makes it easy to
+put on a card and hard to keep current: nothing tells the user a new build
+exists. So it asks GitHub itself, the same way an external release tracker
+would, and can replace itself with what it finds.
 
-    Three things make that safe enough to do automatically:
+Three things make that safe enough to do automatically:
 
-    * The download is verified against the `SHA256SUMS.txt` published with the
-      release before anything is replaced. A release without that file is
-      reported, not installed.
-    * Windows will not let a running exe be overwritten, so the replacement is
-      done by a small script that waits for this process to exit first. The
-      previous exe is kept alongside until the new one has started.
-    * Nothing happens without the user pressing a button. There is no silent
-      update and no background check on a timer.
+* The download is verified against the `SHA256SUMS.txt` published with the
+  release before anything is replaced. A release without that file is
+  reported, not installed.
+* Windows will not let a running exe be overwritten, so the replacement is
+  done by a small script that waits for this process to exit first. The
+  previous exe is kept alongside until the new one has started.
+* Nothing happens without the user pressing a button. There is no silent
+  update and no background check on a timer.
 
-    Running from source there is nothing to replace, so the check reports what
-    is available and stops.
+Running from source there is nothing to replace, so the check reports what
+is available and stops.
 
-Used by
-    `ui.update_check` (the More menu and the About box).
-
-Reference
-    Releases API: https://docs.github.com/en/rest/releases/releases#get-the-latest-release
+Releases API: https://docs.github.com/en/rest/releases/releases#get-the-latest-release
 """
 
 from __future__ import annotations

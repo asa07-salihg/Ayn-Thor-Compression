@@ -1,19 +1,14 @@
 """Why a row failed, and the one thing to do about it.
 
-Why
-    A red "Failed" with the converter's own words in a tooltip told a
-    first-time user nothing they could act on. Clicking it now opens this:
-    the plain explanation from `core.explain`, a button for the fix when
-    there is one, and the original text behind "Show technical details" for
-    anyone reporting a bug.
+A red "Failed" with the converter's own words in a tooltip told a
+first-time user nothing they could act on. Clicking it now opens this:
+the plain explanation from `core.explain`, a button for the fix when
+there is one, and the original text behind "Show technical details" for
+anyone reporting a bug.
 
-    The dialog only records which fix was chosen. Carrying it out (opening
-    Tools, choosing keys) needs the main window's settings and tools, so the
-    main window does it after the dialog closes.
-
-Used by
-    `ui.main_window` (a Failed status clicked, or "What went wrong?" in the
-    row menu).
+The dialog only records which fix was chosen. Carrying it out (opening
+Tools, choosing keys) needs the main window's settings and tools, so the
+main window does it after the dialog closes.
 """
 
 from __future__ import annotations

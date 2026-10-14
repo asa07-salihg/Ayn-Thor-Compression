@@ -1,39 +1,33 @@
 """The only place this app opens a network connection.
 
-Why
-    Two things reach the internet: the tool installer and the updater. Both
-    fetch executables that are then run on the user's machine, so both need the
-    same guarantees, and having one implementation is the only way to be sure
-    they have them.
+Two things reach the internet: the tool installer and the updater. Both
+fetch executables that are then run on the user's machine, so both need the
+same guarantees, and having one implementation is the only way to be sure
+they have them.
 
-    What it enforces, and why each one is here rather than left to the default:
+What it enforces, and why each one is here rather than left to the default:
 
-    * **HTTPS, including after a redirect.** urllib follows redirects happily
-      and will follow one from https to http, at which point the download is
-      whatever the network decided to hand back. A redirect that leaves HTTPS
-      is refused.
-    * **Certificate verification, explicitly.** It is the default, and stating
-      it means a later refactor cannot quietly turn it off.
-    * **A size cap.** A hostile or broken server can otherwise stream until the
-      disk fills. Nothing here is larger than a few hundred megabytes.
-    * **A timeout on every request.** Without one a stalled connection hangs
-      the thread it is on for as long as the socket stays open.
+* **HTTPS, including after a redirect.** urllib follows redirects happily
+  and will follow one from https to http, at which point the download is
+  whatever the network decided to hand back. A redirect that leaves HTTPS
+  is refused.
+* **Certificate verification, explicitly.** It is the default, and stating
+  it means a later refactor cannot quietly turn it off.
+* **A size cap.** A hostile or broken server can otherwise stream until the
+  disk fills. Nothing here is larger than a few hundred megabytes.
+* **A timeout on every request.** Without one a stalled connection hangs
+  the thread it is on for as long as the socket stays open.
 
-    None of this replaces the checksums. Transport security says the bytes
-    arrived unmodified from the host; the checksums in `core.tools.manifest`
-    say they are the bytes we expected, which is the stronger claim and the one
-    that matters if a release asset is ever replaced upstream.
+None of this replaces the checksums. Transport security says the bytes
+arrived unmodified from the host; the checksums in `core.tools.manifest`
+say they are the bytes we expected, which is the stronger claim and the one
+that matters if a release asset is ever replaced upstream.
 
-    It uses urllib rather than requests so the application has one HTTP stack
-    and one fewer dependency to keep current.
+It uses urllib rather than requests so the application has one HTTP stack
+and one fewer dependency to keep current.
 
-Used by
-    `core.tools.manager` (downloading tools), `core.updates` (checking for and
-    downloading a new build), `core.tools.versions` (reading upstream tags).
-
-Reference
-    https://docs.python.org/3/library/urllib.request.html
-    https://docs.python.org/3/library/ssl.html#ssl-security
+https://docs.python.org/3/library/urllib.request.html
+https://docs.python.org/3/library/ssl.html#ssl-security
 """
 
 from __future__ import annotations

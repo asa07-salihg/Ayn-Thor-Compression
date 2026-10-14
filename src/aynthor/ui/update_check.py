@@ -1,20 +1,15 @@
 """The update flow: ask GitHub, show what is there, replace this build.
 
-Why
-    Checking and downloading both block on the network, so both happen on
-    worker threads and the window stays responsive. The dialog exists rather
-    than a message box because a release has something to read: what changed,
-    and how big the download is.
+Checking and downloading both block on the network, so both happen on
+worker threads and the window stays responsive. The dialog exists rather
+than a message box because a release has something to read: what changed,
+and how big the download is.
 
-    Nothing is automatic. There is no check on a timer and no silent install:
-    the user opens this, sees the version and the notes, and presses a button.
-    An app that replaces its own executable should never do it unasked.
+Nothing is automatic. There is no check on a timer and no silent install:
+the user opens this, sees the version and the notes, and presses a button.
+An app that replaces its own executable should never do it unasked.
 
-Used by
-    `ui.main_window` (the More menu), `ui.about_dialog`.
-
-Reference
-    The mechanism: `core.updates`.
+The mechanism: `core.updates`.
 """
 
 from __future__ import annotations

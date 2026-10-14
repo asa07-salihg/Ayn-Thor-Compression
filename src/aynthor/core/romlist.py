@@ -1,25 +1,20 @@
 """Parse an Ayn Thor list file and match its entries to files on disk.
 
-Why
-    The list is a plain text file of `game -> platform -> FORMAT` lines,
-    written for a person to read. It names games, not filenames, and real dumps
-    carry region tags, revision numbers and release-group suffixes that no
-    exact match would survive. So matching is done on keywords: the first few
-    significant words of the title, scored against each candidate filename,
-    with at least two having to hit before a match is accepted. Two is the
-    threshold that stopped "Mario Kart" from matching "Mario Party".
+The list is a plain text file of `game -> platform -> FORMAT` lines,
+written for a person to read. It names games, not filenames, and real dumps
+carry region tags, revision numbers and release-group suffixes that no
+exact match would survive. So matching is done on keywords: the first few
+significant words of the title, scored against each candidate filename,
+with at least two having to hit before a match is accepted. Two is the
+threshold that stopped "Mario Kart" from matching "Mario Party".
 
-    Switch is handled separately because one list entry is several files. A
-    game there is a base title plus its update and any DLC, and installing an
-    update without its base does nothing, so the whole set is collected and
-    returned together.
+Switch is handled separately because one list entry is several files. A
+game there is a base title plus its update and any DLC, and installing an
+update without its base does nothing, so the whole set is collected and
+returned together.
 
-Used by
-    `ui.main_window._import_list`.
-
-Reference
-    The list file format, with a worked example: examples/sample-list.txt.
-    A sample list: examples/ayn-thor-max.list.txt.
+The list file format, with a worked example: examples/sample-list.txt.
+A sample list: examples/ayn-thor-max.list.txt.
 """
 
 from __future__ import annotations

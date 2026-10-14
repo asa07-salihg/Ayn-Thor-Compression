@@ -1,25 +1,20 @@
 """ZCCI / ZCIA, via rom-converto, with two fallbacks. Nintendo 3DS.
 
-Why
-    Three engines exist for this format and none of them covers both
-    directions well, so this converter picks per direction:
+Three engines exist for this format and none of them covers both
+directions well, so this converter picks per direction:
 
-    - Compress prefers `rom-converto ctr compress`: it exposes a zstd level and
-      refuses a still-encrypted ROM. `z3ds_compressor` (the reference Azahar
-      compressor) is the fallback; it has fixed settings and will happily write
-      a useless archive from an encrypted ROM, which is why the encryption
-      check below runs before either engine is chosen.
-    - Open prefers rom-converto too, but falls back to the container decoder in
-      `core.ctr.z3ds`. That path is pure Python, so opening a file the app made
-      never depends on a download.
+- Compress prefers `rom-converto ctr compress`: it exposes a zstd level and
+  refuses a still-encrypted ROM. `z3ds_compressor` (the reference Azahar
+  compressor) is the fallback; it has fixed settings and will happily write
+  a useless archive from an encrypted ROM, which is why the encryption
+  check below runs before either engine is chosen.
+- Open prefers rom-converto too, but falls back to the container decoder in
+  `core.ctr.z3ds`. That path is pure Python, so opening a file the app made
+  never depends on a download.
 
-Used by
-    `core.converters.registry` for `CompressionFormat.Z3DS`.
-
-Reference
-    https://github.com/DevYukine/rom-converto  (`ctr compress` / `ctr decompress`)
-    https://github.com/energeticokay/z3ds_compress
-    Container layout: `core.ctr.z3ds`
+https://github.com/DevYukine/rom-converto  (`ctr compress` / `ctr decompress`)
+https://github.com/energeticokay/z3ds_compress
+Container layout: `core.ctr.z3ds`
 """
 
 from __future__ import annotations

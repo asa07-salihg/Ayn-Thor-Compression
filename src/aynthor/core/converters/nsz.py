@@ -1,22 +1,17 @@
 """NSZ / XCZ, via the nsz package. Nintendo Switch titles.
 
-Why
-    NSZ recompresses the encrypted NCA contents with zstd and leaves every
-    signature in place, so installers still accept the result -- that is the
-    whole point of the format, and why it needs the console keys the user
-    supplies. The app never ships keys; see SECURITY.md.
+NSZ recompresses the encrypted NCA contents with zstd and leaves every
+signature in place, so installers still accept the result -- that is the
+whole point of the format, and why it needs the console keys the user
+supplies. The app never ships keys; see SECURITY.md.
 
-    nsz runs out of process rather than as a library call because it uses
-    `multiprocessing` internally and writes to global state during a run;
-    importing it into the GUI process made a cancelled job leave worker
-    processes behind. The passthrough is `core.nsz_runner`.
+nsz runs out of process rather than as a library call because it uses
+`multiprocessing` internally and writes to global state during a run;
+importing it into the GUI process made a cancelled job leave worker
+processes behind. The passthrough is `core.nsz_runner`.
 
-Used by
-    `core.converters.registry` for `CompressionFormat.NSZ`.
-
-Reference
-    https://github.com/nicoboss/nsz
-    NCA container layout: https://switchbrew.org/wiki/NCA
+https://github.com/nicoboss/nsz
+NCA container layout: https://switchbrew.org/wiki/NCA
 """
 
 from __future__ import annotations

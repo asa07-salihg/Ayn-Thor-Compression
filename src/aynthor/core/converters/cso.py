@@ -1,18 +1,13 @@
 """CSO / ZSO / DAX, via maxcso. PSP and PS2 ISO images.
 
-Why
-    An alternative to CHD for PSP: usually a little smaller, and PPSSPP reads
-    it natively. maxcso is worth wrapping rather than writing our own because
-    it tries several deflate implementations per block and keeps whichever wins
-    -- which is where the extra few percent over other CSO tools comes from.
+An alternative to CHD for PSP: usually a little smaller, and PPSSPP reads
+it natively. maxcso is worth wrapping rather than writing our own because
+it tries several deflate implementations per block and keeps whichever wins
+-- which is where the extra few percent over other CSO tools comes from.
 
-Used by
-    `core.converters.registry` for `CompressionFormat.CSO`.
-
-Reference
-    maxcso options and the format notes:
-    https://github.com/unknownbrackets/maxcso
-    https://github.com/unknownbrackets/maxcso/blob/master/README_ZSO.md
+maxcso options and the format notes:
+https://github.com/unknownbrackets/maxcso
+https://github.com/unknownbrackets/maxcso/blob/master/README_ZSO.md
 """
 
 from __future__ import annotations

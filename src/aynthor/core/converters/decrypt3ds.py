@@ -1,19 +1,14 @@
 """Decrypt 3DS carts and CIAs, via the Batch CIA 3DS Decryptor Redux tools.
 
-Why
-    A cart dumped from a console is encrypted. Emulators decrypt on the fly, so
-    the encryption is invisible until you try to compress the file -- and
-    encrypted bytes do not compress, so ZCCI on an encrypted ROM saves nothing.
-    This step therefore has to run first, and it is exposed as its own format
-    in the sidebar rather than hidden inside the ZCCI path, because the
-    decrypted file is useful on its own.
+A cart dumped from a console is encrypted. Emulators decrypt on the fly, so
+the encryption is invisible until you try to compress the file -- and
+encrypted bytes do not compress, so ZCCI on an encrypted ROM saves nothing.
+This step therefore has to run first, and it is exposed as its own format
+in the sidebar rather than hidden inside the ZCCI path, because the
+decrypted file is useful on its own.
 
-Used by
-    `core.converters.registry` for `CompressionFormat.DEC_3DS`.
-
-Reference
-    https://github.com/xxmichibxx/Batch-CIA-3DS-Decryptor-Redux
-    NCCH and NCSD layout: https://www.3dbrew.org/wiki/NCSD
+https://github.com/xxmichibxx/Batch-CIA-3DS-Decryptor-Redux
+NCCH and NCSD layout: https://www.3dbrew.org/wiki/NCSD
 """
 
 from __future__ import annotations

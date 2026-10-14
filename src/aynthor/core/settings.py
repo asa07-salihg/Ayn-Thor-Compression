@@ -1,29 +1,24 @@
 """The choices the user has made, in one object.
 
-Why
-    There is no "currently selected format" in this app. Every queued row
-    carries its own target, so settings are stored per format rather than for
-    whichever one happens to be highlighted. That removes a whole class of
-    confusion the previous design had: changing a value in one place and having
-    it silently apply, or not apply, to rows that were already queued.
+There is no "currently selected format" in this app. Every queued row
+carries its own target, so settings are stored per format rather than for
+whichever one happens to be highlighted. That removes a whole class of
+confusion the previous design had: changing a value in one place and having
+it silently apply, or not apply, to rows that were already queued.
 
-    What is left global is what genuinely is: where output goes, what to do
-    about an existing file, whether to delete sources, and where the Switch
-    keys live.
+What is left global is what genuinely is: where output goes, what to do
+about an existing file, whether to delete sources, and where the Switch
+keys live.
 
-Used by
-    `ui.settings_dialog` (writes), `core.jobs.build_jobs` and
-    `ui.queue_view` (read), `ui.main_window` (owns the single instance).
-
-Reference
-    Persisting these between sessions is `ui.state`, kept separate because
-    `core` must not depend on Qt.
+Persisting these between sessions is `ui.state`, kept separate because
+`core` must not depend on Qt.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from aynthor.core.device.fs import DeviceTarget
 from aynthor.core.models import CompressionFormat
 
 
@@ -38,6 +33,12 @@ class FormatSettings:
     # will look for it. Overrides `output_dir` for any row that knows its
     # platform; a row that does not falls back to the ordinary rules.
     esde_root: str = ""
+
+    # A handheld on USB, reached over MTP, used instead of `esde_root` when
+    # set. It has no path, so a game for it is converted into `staging_dir`
+    # (the app's own folder when empty) and then sent across.
+    device: DeviceTarget | None = None
+    staging_dir: str = ""
 
     # skip | overwrite | rename. Skip by default so re-running over a finished
     # folder does nothing rather than redoing hours of work.
@@ -68,3 +69,8 @@ class FormatSettings:
         if fmt is None:
             return {}
         return dict(self.options.get(fmt, {}))
+
+    @property
+    def has_destination(self) -> bool:
+        """Games go somewhere other than beside the files they came from."""
+        return bool(self.device or self.esde_root or self.output_dir)

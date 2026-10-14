@@ -1,25 +1,20 @@
 """Remember what the user set, between runs.
 
-Why
-    A batch tool is used the same way every time: the same output folder, the
-    same options, the same window on the same monitor. Making someone re-pick
-    all of it at every launch is the difference between a utility and a demo.
-    QSettings writes to the registry on Windows, so there is no file for the
-    app to manage.
+A batch tool is used the same way every time: the same output folder, the
+same options, the same window on the same monitor. Making someone re-pick
+all of it at every launch is the difference between a utility and a demo.
+QSettings writes to the registry on Windows, so there is no file for the
+app to manage.
 
-    Two things are deliberately not stored:
+Two things are deliberately not stored:
 
-    * The queue. Those files may have been moved, renamed or already converted
-      by the time the app opens again, and restoring a list of paths that no
-      longer resolve is worse than restoring nothing.
-    * `delete_source`. It destroys the user's ROMs, so it is re-armed on
-      purpose each session.
+* The queue. Those files may have been moved, renamed or already converted
+  by the time the app opens again, and restoring a list of paths that no
+  longer resolve is worse than restoring nothing.
+* `delete_source`. It destroys the user's ROMs, so it is re-armed on
+  purpose each session.
 
-Used by
-    `ui.main_window` (on show and on close), `app.run` (the theme).
-
-Reference
-    https://doc.qt.io/qt-6/qsettings.html
+https://doc.qt.io/qt-6/qsettings.html
 """
 
 from __future__ import annotations
@@ -28,6 +23,7 @@ import json
 
 from PySide6.QtCore import QByteArray, QSettings
 
+from aynthor.core.device import DeviceTarget
 from aynthor.core.jobs import conflict_policy
 from aynthor.core.models import CompressionFormat
 from aynthor.core.presets import PresetTable
@@ -80,6 +76,8 @@ def save(settings: FormatSettings, geometry: QByteArray) -> None:
     store.setValue("window/geometry", geometry)
     store.setValue("job/output_dir", settings.output_dir)
     store.setValue("job/esde_root", settings.esde_root)
+    store.setValue("job/device", json.dumps(settings.device.to_dict())
+                   if settings.device is not None else "")
     store.setValue("job/on_conflict", settings.on_conflict)
     store.setValue("job/game_folders", settings.game_folders)
     store.setValue("job/show_empty_folders", settings.show_empty_folders)
@@ -95,6 +93,7 @@ def load_into(settings: FormatSettings) -> None:
     store = _store()
     settings.output_dir = str(store.value("job/output_dir", ""))
     settings.esde_root = str(store.value("job/esde_root", ""))
+    settings.device = _load_device(store)
     settings.on_conflict = conflict_policy(str(store.value("job/on_conflict", "skip")))
     settings.keys_path = str(store.value("job/keys_path", ""))
 
@@ -150,3 +149,13 @@ def _load_options(store: QSettings) -> dict[CompressionFormat, dict]:
         if isinstance(value, dict):
             options[fmt] = value
     return options
+
+
+def _load_device(store: QSettings) -> DeviceTarget | None:
+    raw = store.value("job/device", "")
+    if not raw:
+        return None
+    try:
+        return DeviceTarget.from_dict(json.loads(str(raw)))
+    except (TypeError, ValueError):
+        return None

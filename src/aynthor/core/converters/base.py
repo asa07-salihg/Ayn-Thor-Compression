@@ -1,19 +1,13 @@
 """What every converter shares: the interface, progress parsing, small helpers.
 
-Why
-    Nine converters wrap nine command-line tools that agree on almost nothing.
-    What they do agree on is the shape of the work -- validate, run, report --
-    and the fact that each prints a percentage somewhere in its output. Pulling
-    that into a base class is what keeps the queue's progress column working
-    the same way for chdman, DolphinTool and 7-Zip alike.
+Nine converters wrap nine command-line tools that agree on almost nothing.
+What they do agree on is the shape of the work -- validate, run, report --
+and the fact that each prints a percentage somewhere in its output. Pulling
+that into a base class is what keeps the queue's progress column working
+the same way for chdman, DolphinTool and 7-Zip alike.
 
-Used by
-    Every module in this package; `core.converters.registry` maps formats to
-    the concrete classes.
-
-Reference
-    The individual tools' flags are documented in each converter, with a link to
-    each project's own reference.
+The individual tools' flags are documented in each converter, with a link to
+each project's own reference.
 """
 
 from __future__ import annotations
@@ -29,6 +23,7 @@ from contextlib import contextmanager, suppress
 from pathlib import Path
 
 from aynthor.core.models import CompressionFormat, ConversionJob, ConversionMode
+from aynthor.core.sheets import is_sheet, missing_track, relative_tracks
 
 # Deliberately loose: chdman prints "Compressing, 42.3% complete", DolphinTool
 # prints a bare "42%", 7-Zip prints "42% 12 - name". One number followed by a
@@ -75,6 +70,15 @@ def place_file(
     `on_progress` is required for large Moves: unpacking a RAR ends at 99%,
     and a silent copy of a 14 GB NSP looks frozen until the copy finishes.
     """
+    if is_sheet(job.input_path):
+        return _place_disc(job, on_progress)
+    return _place_one(job, on_progress)
+
+
+def _place_one(
+    job: ConversionJob,
+    on_progress: Callable[[int], None] | None = None,
+) -> tuple[bool, str]:
     src = job.input_path
     dst = job.output_path
     try:
@@ -101,6 +105,59 @@ def place_file(
     except OSError as exc:
         return False, f"Could not copy into its folder: {exc}"
     return True, "Placed in its game folder."
+
+
+def _place_disc(
+    job: ConversionJob,
+    on_progress: Callable[[int], None] | None = None,
+) -> tuple[bool, str]:
+    """A cue sheet or GDI goes with every track it lists, into the same folder
+    and under the same names, or the copy is a sheet pointing at nothing.
+
+    The tracks are listed before the sheet moves. When the sheet was folded
+    into a folder of its own name (moved, not copied), the tracks are moved
+    after it, so the game is not left half in and half out of its folder.
+    """
+    src = job.input_path
+    problem = missing_track(src)
+    if problem:
+        return False, problem
+    listed = relative_tracks(src)
+    sizes = [src.parent.joinpath(*t.parts).stat().st_size for t in listed]
+    sheet_size = src.stat().st_size
+    total = max(1, sheet_size + sum(sizes))
+    done = 0
+
+    def scaled(size: int) -> Callable[[int], None] | None:
+        if on_progress is None:
+            return None
+        start = done
+        return lambda pct: on_progress(min(100, (start + size * pct // 100) * 100 // total))
+
+    sheet = ConversionJob(input_path=src, output_path=job.output_path, format=job.format,
+                          options=job.options)
+    ok, message = _place_one(sheet, scaled(sheet_size))
+    if not ok:
+        return ok, message
+    done = sheet_size
+    folded = not src.is_file()   # it is now the folder it was folded into
+    for track, size in zip(listed, sizes, strict=True):
+        here = src.parent.joinpath(*track.parts)
+        there = job.output_path.parent.joinpath(*track.parts)
+        try:
+            if there.exists() and there.resolve() == here.resolve():
+                continue
+            there.parent.mkdir(parents=True, exist_ok=True)
+            if folded:
+                here.replace(there)
+            else:
+                _copy_with_progress(here, there, scaled(size))
+        except OSError as exc:
+            return False, f"Could not copy {track.name} into its folder: {exc}"
+        done += size
+    if on_progress:
+        on_progress(100)
+    return True, message
 
 
 def _fold_into_own_name(

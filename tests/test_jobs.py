@@ -24,10 +24,20 @@ def source(tmp_path: Path) -> Path:
     return path
 
 
+def test_every_row_becomes_a_job_and_skipping_waits_for_its_turn(source, tmp_path):
+    """Whether an output is already there is decided when the job starts
+    (`core.batch`), when earlier jobs have written theirs."""
+    existing = tmp_path / "game.chd"
+    existing.write_bytes(b"done")
+    jobs = build_jobs([row(source, existing)], FormatSettings(on_conflict="skip"))
+    assert [job.output_path for _row, job in jobs] == [existing]
+
+
 def test_skip_is_the_default_so_a_rerun_does_nothing(source, tmp_path):
     existing = tmp_path / "game.chd"
     existing.write_bytes(b"done")
-    assert build_jobs([row(source, existing)], FormatSettings(on_conflict="skip")) == []
+    assert FormatSettings().on_conflict == "skip"
+    assert resolve_output_path(existing, "skip") is None
 
 
 def test_overwrite_keeps_the_same_path(source, tmp_path):
@@ -273,36 +283,39 @@ def test_a_windows_device_name_is_not_used_as_a_folder(reserved):
 
 
 def test_two_rows_in_one_batch_cannot_claim_the_same_output(tmp_path: Path):
-    """The policy only looked at the disk, and at build time none of the batch
-    has run, so two rows heading for one path both passed. Whichever finished
-    last won and the other game was gone -- including for a user who had
-    chosen "rename" precisely to avoid that."""
-    settings = FormatSettings()
-    settings.on_conflict = "rename"
-    one = tmp_path / "one.iso"
-    two = tmp_path / "two.iso"
-    for path in (one, two):
-        path.write_bytes(b"\0" * 32)
+    """A path an earlier row of the batch claimed counts as taken, even before
+    that row has written it, so "rename" really renames."""
     output = tmp_path / "Game.chd"
-
-    jobs = build_jobs([row(one, output), (1, row(two, output)[1])], settings)
-    assert len({job.output_path for _row, job in jobs}) == 2
+    claimed = {output}
+    assert resolve_output_path(output, "rename", claimed) == tmp_path / "Game_1.chd"
+    assert resolve_output_path(output, "skip", claimed) is None
 
 
 def test_overwrite_still_steps_aside_for_another_row_in_the_same_batch(tmp_path):
     """Overwriting a file that was there before the batch is what the user
     asked for. Overwriting what another row is about to write is losing a
     game."""
-    settings = FormatSettings()
-    settings.on_conflict = "overwrite"
-    one = tmp_path / "one.iso"
-    two = tmp_path / "two.iso"
-    for path in (one, two):
-        path.write_bytes(b"\0" * 32)
     output = tmp_path / "Game.chd"
+    output.write_bytes(b"old")
+    assert resolve_output_path(output, "overwrite", set()) == output
+    assert resolve_output_path(output, "overwrite", {output}) == tmp_path / "Game_1.chd"
 
-    jobs = build_jobs([row(one, output), (1, row(two, output)[1])], settings)
-    assert len({job.output_path for _row, job in jobs}) == 2
+
+def test_a_device_row_knows_where_it_goes_on_the_device(tmp_path):
+    from aynthor.core.device import DeviceTarget
+    from aynthor.core.output import device_staging
+
+    settings = FormatSettings()
+    settings.device = DeviceTarget("id", "AYN Thor", "disk", "ROMs")
+    settings.staging_dir = str(tmp_path / "Staging")
+    staging = device_staging(settings)
+    source = tmp_path / "Spyro.cue"
+    source.write_bytes(b"x")
+    jobs = build_jobs([row(source, staging / "psx" / "Spyro.chd")], settings)
+    assert jobs[0][1].remote == "psx/Spyro.chd"
+
+    elsewhere = build_jobs([row(source, tmp_path / "Spyro.chd")], settings)
+    assert elsewhere[0][1].remote == ""
 
 
 def test_an_unknown_conflict_policy_falls_back_to_skip():

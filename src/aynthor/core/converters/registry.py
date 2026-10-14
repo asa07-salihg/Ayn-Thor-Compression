@@ -1,16 +1,11 @@
 """Which converter handles which format.
 
-Why
-    One lookup table so the job runner never has to know the class names, and
-    adding a format is one import plus one line rather than a change to the
-    runner. The instances are shared and stateless apart from `on_progress`,
-    which the runner sets and clears around each job.
+One lookup table so the job runner never has to know the class names, and
+adding a format is one import plus one line rather than a change to the
+runner. The instances are shared and stateless apart from `on_progress`,
+which the runner sets and clears around each job.
 
-Used by
-    `ui.job_runner.JobRunner.run`.
-
-Reference
-    The formats themselves are catalogued in `core.formats`.
+The formats themselves are catalogued in `core.formats`.
 """
 
 from __future__ import annotations

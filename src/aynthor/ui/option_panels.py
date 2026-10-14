@@ -1,37 +1,32 @@
 """One options panel per format, plus the general options below them.
 
-Why
-    Every tool has different flags and they are not interchangeable: chdman
-    takes hunk sizes, DolphinTool takes block sizes and a codec, nsz takes a
-    compression mode. Rather than one settings page full of controls that are
-    greyed out most of the time, each format gets its own panel and only the
-    panel for the selected format is shown.
+Every tool has different flags and they are not interchangeable: chdman
+takes hunk sizes, DolphinTool takes block sizes and a codec, nsz takes a
+compression mode. Rather than one settings page full of controls that are
+greyed out most of the time, each format gets its own panel and only the
+panel for the selected format is shown.
 
-    Values are offered as dropdowns rather than free-typed numbers because
-    these flags have small sets of sensible values, and a typo in a hunk size
-    fails several minutes into a run rather than immediately.
+Values are offered as dropdowns rather than free-typed numbers because
+these flags have small sets of sensible values, and a typo in a hunk size
+fails several minutes into a run rather than immediately.
 
-    Panels disable their compression controls in Open mode instead of hiding
-    them, so the layout does not jump when the mode changes.
+Panels disable their compression controls in Open mode instead of hiding
+them, so the layout does not jump when the mode changes.
 
-Used by
-    `ui.main_window`.
-
-Reference
-    What each flag does, and why the defaults are what they are:
-    each tool's own documentation, linked from `core.tools.manifest`.
+What each flag does, and why the defaults are what they are:
+each tool's own documentation, linked from `core.tools.manifest`.
 """
 
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable
-from pathlib import Path
 from typing import ClassVar
 
 from PySide6.QtCore import QObject, Qt, Signal
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
+    QDialog,
     QFileDialog,
     QFormLayout,
     QGridLayout,
@@ -43,7 +38,6 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from aynthor.core.esde import resolve_roms_root
 from aynthor.core.formats import FORMAT_CATALOG
 from aynthor.core.models import CompressionFormat, ConversionMode
 from aynthor.core.settings import FormatSettings
@@ -711,25 +705,23 @@ class GeneralPanel(QWidget):
         intro.setProperty("role", "second")
         layout.addRow(intro)
 
-        card_row = QWidget()
-        card_layout = QHBoxLayout(card_row)
-        card_layout.setContentsMargins(0, 0, 0, 0)
-        card_layout.setSpacing(6)
-        self.esde_edit = QLineEdit()
-        self.esde_edit.setPlaceholderText("Not set")
-        self.esde_edit.setReadOnly(True)
-        self.esde_edit.setToolTip(
-            "The folder with a folder for each console inside it, on an SD card or\n"
-            "this computer. Each finished game goes into the folder for its console,\n"
-            "such as psx or switch. The Platform column on each row decides which.")
-        card_browse = QPushButton("Choose...")
-        card_browse.clicked.connect(self._pick_card)
-        card_clear = QPushButton("Clear")
-        card_clear.clicked.connect(lambda: self.esde_edit.setText(""))
-        card_layout.addWidget(self.esde_edit, stretch=1)
-        card_layout.addWidget(card_browse)
-        card_layout.addWidget(card_clear)
-        layout.addRow("ROMs folder:", card_row)
+        self._device = None
+        self._esde_root = ""
+        where_row = QWidget()
+        where_layout = QHBoxLayout(where_row)
+        where_layout.setContentsMargins(0, 0, 0, 0)
+        where_layout.setSpacing(6)
+        self.destination_label = QLabel()
+        self.destination_label.setWordWrap(True)
+        self.destination_label.setToolTip(
+            "A handheld over USB, a ROMs folder on this PC or an SD card, or next to\n"
+            "the original files. Each finished game goes into the folder for its\n"
+            "console, such as psx or switch. The Platform column decides which.")
+        change = QPushButton("Change...")
+        change.clicked.connect(self._choose_destination)
+        where_layout.addWidget(self.destination_label, stretch=1)
+        where_layout.addWidget(change)
+        layout.addRow("Games go to:", where_row)
 
         out_row = QWidget()
         out_layout = QHBoxLayout(out_row)
@@ -783,7 +775,6 @@ class GeneralPanel(QWidget):
 
         for widget, signal in (
             (self.output_edit, "textChanged"),
-            (self.esde_edit, "textChanged"),
             (self.conflict_combo, "currentIndexChanged"),
             (self.game_folders, "toggled"),
             (self.show_empty_folders, "toggled"),
@@ -796,20 +787,31 @@ class GeneralPanel(QWidget):
         if path:
             self.output_edit.setText(path)
 
-    def _pick_card(self) -> None:
-        """Accepts either the ROMs folder or the folder holding it; ES-DE's own
-        layout rules work out which was chosen."""
-        path = QFileDialog.getExistingDirectory(self, "Choose your ROMs folder")
-        if path:
-            self.esde_edit.setText(str(resolve_roms_root(Path(path))))
+    def _choose_destination(self) -> None:
+        from aynthor.ui.destination import DestinationDialog
+
+        scratch = FormatSettings(output_dir=self.output_edit.text().strip(),
+                                 esde_root=self._esde_root, device=self._device)
+        if DestinationDialog(scratch, self).exec() == QDialog.DialogCode.Accepted:
+            self.set_destination(scratch.device, scratch.esde_root)
+            self.changed.emit()
+
+    def set_destination(self, device, esde_root: str) -> None:
+        from aynthor.ui.destination import describe
+
+        self._device = device
+        self._esde_root = esde_root
+        self.destination_label.setText(describe(FormatSettings(
+            esde_root=esde_root, device=device,
+            output_dir=self.output_edit.text().strip())))
 
     def load(self, settings: FormatSettings) -> None:
-        widgets = (self.output_edit, self.esde_edit, self.conflict_combo,
+        widgets = (self.output_edit, self.conflict_combo,
                    self.game_folders, self.show_empty_folders, self.delete_source)
         for widget in widgets:
             widget.blockSignals(True)
         self.output_edit.setText(settings.output_dir)
-        self.esde_edit.setText(settings.esde_root)
+        self.set_destination(settings.device, settings.esde_root)
         index = self.conflict_combo.findData(settings.on_conflict)
         if index >= 0:
             self.conflict_combo.setCurrentIndex(index)
@@ -821,7 +823,8 @@ class GeneralPanel(QWidget):
 
     def apply_to(self, settings: FormatSettings) -> None:
         settings.output_dir = self.output_edit.text().strip()
-        settings.esde_root = self.esde_edit.text().strip()
+        settings.esde_root = self._esde_root
+        settings.device = self._device
         settings.on_conflict = self.conflict_combo.currentData()
         settings.game_folders = self.game_folders.isChecked()
         settings.show_empty_folders = self.show_empty_folders.isChecked()

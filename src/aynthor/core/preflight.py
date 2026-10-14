@@ -1,25 +1,19 @@
 """Find what would make a batch fail, before Start runs anything.
 
-Why
-    Pressing Start with chdman missing turned every row red, one after
-    another, with the reason in a log that was closed. A missing `prod.keys`
-    was found only when the first Switch row failed, and a file whose console
-    was not recognised was quietly written next to its original instead of
-    into the ROMs folder. All three are knowable before anything runs, so the window
-    asks about them up front and offers a fix or a way to leave those files out.
+Pressing Start with chdman missing turned every row red, one after
+another, with the reason in a log that was closed. A missing `prod.keys`
+was found only when the first Switch row failed, and a file whose console
+was not recognised was quietly written next to its original instead of
+into the ROMs folder. All three are knowable before anything runs, so the window
+asks about them up front and offers a fix or a way to leave those files out.
 
-    Which program a row needs follows the runner exactly: a Move, or a file
-    that is already the container its platform wants, is only copied, and
-    opening a 3DS file falls back to the built-in decoder. Warning about a
-    program those rows never call would teach people to ignore the warning.
+Which program a row needs follows the runner exactly: a Move, or a file
+that is already the container its platform wants, is only copied, and
+opening a 3DS file falls back to the built-in decoder. Warning about a
+program those rows never call would teach people to ignore the warning.
 
-Used by
-    `ui.main_window` (Start, and the Start button's tooltip),
-    `ui.preflight_dialog`.
-
-Reference
-    What each converter runs: `core.converters`.
-    Program keys: `core.tools.manifest`.
+What each converter runs: `core.converters`.
+Program keys: `core.tools.manifest`.
 """
 
 from __future__ import annotations
@@ -49,6 +43,7 @@ _PROGRAM: dict[CompressionFormat, tuple[str, ...]] = {
 
 
 class ProblemKind(str, Enum):
+    DEVICE_NOT_READY = "device_not_ready"
     MISSING_TOOLS = "missing_tools"
     NO_SWITCH_KEYS = "no_switch_keys"
     UNKNOWN_PLATFORM = "unknown_platform"
@@ -59,6 +54,7 @@ class Problem:
     kind: ProblemKind
     rows: tuple[int, ...]
     tools: tuple[str, ...] = ()
+    detail: str = ""     # the device's own reason, for DEVICE_NOT_READY
 
     @property
     def blocking(self) -> bool:
@@ -103,9 +99,24 @@ def check_queue(
     *,
     is_available: Callable[[str], bool],
     find_keys: Callable[[], Path | None] = find_prod_keys,
+    device_ready: Callable[[], str] | None = None,
 ) -> list[Problem]:
-    """Every problem in the queue, blocking ones first."""
+    """Every problem in the queue, blocking ones first.
+
+    `device_ready` answers "" when the device games are going to can be
+    opened, or why it cannot. It is asked only when some row would be sent,
+    because asking means talking to USB.
+    """
     problems: list[Problem] = []
+
+    if settings.device is not None and device_ready is not None:
+        bound = [row for row, item in queue
+                 if _converts(item) and ESDE_PLATFORM_FOLDERS.get(item.platform)]
+        if bound:
+            reason = device_ready()
+            if reason:
+                problems.append(Problem(ProblemKind.DEVICE_NOT_READY, tuple(bound),
+                                        detail=reason))
 
     missing = missing_programs(queue, is_available)
     if missing:
@@ -117,7 +128,7 @@ def check_queue(
     if keyless:
         problems.append(Problem(ProblemKind.NO_SWITCH_KEYS, tuple(keyless)))
 
-    if settings.esde_root:
+    if settings.esde_root or settings.device is not None:
         unknown = [row for row, item in queue
                    if _converts(item) and not ESDE_PLATFORM_FOLDERS.get(item.platform)]
         if unknown:

@@ -1,28 +1,22 @@
 """Assign a queue row to a game folder, and find folders on a card.
 
-Why
-    ES-DE launches a folder named `Game.chd` by running the file inside that
-    is also called `Game.chd`. The queue is a tree of those folders, and a
-    file the app could not group is fixed by dropping it onto one: that sets
-    the output to `Game.chd/<file>`, and if the file is the primary ROM the
-    name becomes the folder's name exactly.
+ES-DE launches a folder named `Game.chd` by running the file inside that
+is also called `Game.chd`. The queue is a tree of those folders, and a
+file the app could not group is fixed by dropping it onto one: that sets
+the output to `Game.chd/<file>`, and if the file is the primary ROM the
+name becomes the folder's name exactly.
 
-    Add folder also has to show the directories themselves. A freshly copied
-    ES-DE `ROMs/` tree is full of `psx/`, `snes` and friends that hold only
-    `systeminfo.txt`. Those are still the folders the user wants to see and
-    drop dumps into, even though none of them is named like a ROM.
+Add folder also has to show the directories themselves. A freshly copied
+ES-DE `ROMs/` tree is full of `psx/`, `snes` and friends that hold only
+`systeminfo.txt`. Those are still the folders the user wants to see and
+drop dumps into, even though none of them is named like a ROM.
 
-    When the card already holds a base game folder, a later DLC or disc is
-    matched by title header (one name is a prefix of the other), not by
-    keywords like "dlc" or "update".
+When the card already holds a base game folder, a later DLC or disc is
+matched by title header (one name is a prefix of the other), not by
+keywords like "dlc" or "update".
 
-Used by
-    `ui.queue_view` (tree grouping and drag-and-drop), `ui.main_window`
-    (folders found by Add folder).
-
-Reference
-    ES-DE "Directories interpreted as files":
-    https://gitlab.com/es-de/emulationstation-de/-/blob/master/USERGUIDE.md
+ES-DE "Directories interpreted as files":
+https://gitlab.com/es-de/emulationstation-de/-/blob/master/USERGUIDE.md
 """
 
 from __future__ import annotations

@@ -1,19 +1,14 @@
 """CHD, via MAME's chdman. PS1, PS2, PSP and Dreamcast disc images.
 
-Why
-    CHD is the one format that covers every optical system these emulators
-    handle, and it collapses a cue/bin pair into a single file. chdman is the
-    reference implementation; there is no library binding worth using, so we
-    drive the command line.
+CHD is the one format that covers every optical system these emulators
+handle, and it collapses a cue/bin pair into a single file. chdman is the
+reference implementation; there is no library binding worth using, so we
+drive the command line.
 
-Used by
-    `core.converters.registry` for `CompressionFormat.CHD`.
-
-Reference
-    chdman command reference:
-    https://docs.mamedev.org/tools/chdman.html
-    Why PS2 gets zlib rather than zstd: the note on the PS2 entry in
-    `core.presets`.
+chdman command reference:
+https://docs.mamedev.org/tools/chdman.html
+Why PS2 gets zlib rather than zstd: the note on the PS2 entry in
+`core.presets`.
 """
 
 from __future__ import annotations

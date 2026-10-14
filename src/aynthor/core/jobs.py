@@ -1,25 +1,22 @@
 """Turn queue rows into the list of jobs the runner will execute.
 
-Why
-    A row is not a job. Between the two sits every rule that decides whether
-    the work should happen at all: the conflict policy can drop a row whose
-    output already exists, and the row's own options have to be layered on top
-    of the format's defaults. Keeping that in a plain function means it can be
-    tested without a window.
+A row is not a job. Between the two sits every rule that decides whether
+the work should happen at all: the conflict policy can drop a row whose
+output already exists, and the row's own options have to be layered on top
+of the format's defaults. Keeping that in a plain function means it can be
+tested without a window.
 
-Used by
-    `ui.main_window` when Start is pressed.
-
-Reference
-    Why jobs then run one at a time rather than in parallel:
-    `ui.job_runner`, which walks the jobs this builds.
+Why jobs then run one at a time rather than in parallel:
+`ui.job_runner`, which walks the jobs this builds.
 """
 
 from __future__ import annotations
 
 from pathlib import Path
 
+from aynthor.core.device.deliver import remote_for
 from aynthor.core.models import CompressionFormat, ConversionJob, QueueItem
+from aynthor.core.output import device_staging
 from aynthor.core.settings import FormatSettings
 
 
@@ -128,18 +125,18 @@ def build_jobs(
     queue: list[tuple[int, QueueItem]],
     settings: FormatSettings,
 ) -> list[tuple[int, ConversionJob]]:
-    """Rows in, jobs out. The int is the table row, so progress can find it again."""
+    """Rows in, jobs out. The int is the row id, so progress can find it again.
+
+    Nothing is skipped here. Whether the output is already there is decided by
+    the runner as each job starts, because by then the jobs before it have
+    written their files, and a device can only be asked once it is open.
+    """
     jobs: list[tuple[int, ConversionJob]] = []
-    claimed: set[Path] = set()
+    staging = device_staging(settings)
 
     for row, item in queue:
         if item.format is None:
             continue
-
-        output = resolve_output_path(item.output, settings.on_conflict, claimed)
-        if output is None:
-            continue
-        claimed.add(output)
 
         input_size = item.source_bytes if item.source_bytes > 0 else 0
         if input_size <= 0:
@@ -148,14 +145,17 @@ def build_jobs(
             except OSError:
                 input_size = 0
 
+        output = _absolute(item.output)
+        remote = remote_for(output, _absolute(staging)) if staging is not None else None
         jobs.append((
             row,
             ConversionJob(
                 input_path=_absolute(item.path),
-                output_path=_absolute(output),
+                output_path=output,
                 format=item.format,
                 options=job_options(settings, item),
                 member=item.member,
+                remote=remote.as_posix() if remote is not None else "",
                 input_size=input_size,
             ),
         ))

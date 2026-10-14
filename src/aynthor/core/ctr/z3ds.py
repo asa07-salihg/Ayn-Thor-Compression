@@ -1,6 +1,5 @@
 """Read a Z3DS container back into the ROM it was made from.
 
-Why
     z3ds_compressor only compresses; nothing in the reference toolchain goes
     the other way. rom-converto does, but it is an optional download, and a
     user should never be unable to open a file this app created. So the
@@ -26,14 +25,9 @@ Container layout (Azahar's format, version 1):
     0x20     ..   metadata block
     ..       ..   zstd seekable stream
 
-Used by
-    `core.converters.z3ds.Z3dsConverter` (fallback path and header reads),
-    `core.formats._decompressed_path` (naming the restored file).
-
-Reference
-    zstd seekable format specification:
-    https://github.com/facebook/zstd/blob/dev/contrib/seekable_format/zstd_seekable_compression_format.md
-    Azahar's compressor: https://github.com/energeticokay/z3ds_compress
+zstd seekable format specification:
+https://github.com/facebook/zstd/blob/dev/contrib/seekable_format/zstd_seekable_compression_format.md
+Azahar's compressor: https://github.com/energeticokay/z3ds_compress
 """
 
 from __future__ import annotations

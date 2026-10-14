@@ -1,16 +1,11 @@
 """The About box.
 
-Why
-    An app that runs nine third-party tools owes the user a list of them and
-    their licences somewhere reachable from inside the app, not only in a
-    README they will never open. It is also where the version goes, which is
-    the first thing anyone is asked for in a bug report.
+An app that runs nine third-party tools owes the user a list of them and
+their licences somewhere reachable from inside the app, not only in a
+README they will never open. It is also where the version goes, which is
+the first thing anyone is asked for in a bug report.
 
-Used by
-    `ui.main_window` (Help menu).
-
-Reference
-    The full notice file: THIRD-PARTY-NOTICES.md.
+The full notice file: THIRD-PARTY-NOTICES.md.
 """
 
 from __future__ import annotations
