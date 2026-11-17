@@ -7,6 +7,7 @@
 <a href="https://github.com/asa07-salihg/Ayn-Thor-Compression/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/asa07-salihg/Ayn-Thor-Compression/ci.yml?label=CI&logo=github&logoColor=white&labelColor=27303D&style=flat" alt="CI"></a>
 <a href="https://github.com/asa07-salihg/Ayn-Thor-Compression/releases"><img src="https://img.shields.io/github/downloads/asa07-salihg/Ayn-Thor-Compression/total?label=downloads&logo=github&logoColor=white&color=3ddc84&labelColor=27303D&style=flat" alt="Downloads"></a>
 <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue?labelColor=27303D&style=flat" alt="License"></a>
+<a href="https://buymeacoffee.com/asa07salihg"><img src="https://img.shields.io/badge/Buy%20Me%20a%20Coffee-support-ffdd00?logo=buymeacoffee&logoColor=ffdd00&labelColor=27303D&style=flat" alt="Buy Me a Coffee"></a>
 </p>
 
 <p align="center">
