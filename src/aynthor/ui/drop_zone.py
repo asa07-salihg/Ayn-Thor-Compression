@@ -252,7 +252,8 @@ class DropZone(QFrame):
 
     def dropEvent(self, event: QDropEvent) -> None:
         self._set_active(False)
-        paths = [Path(url.toLocalFile()) for url in event.mimeData().urls()]
+        paths = [Path(url.toLocalFile()) for url in event.mimeData().urls()
+                 if url.isLocalFile()]
         real = [p for p in paths if p.exists()]
         if real:
             self.paths_dropped.emit(real)

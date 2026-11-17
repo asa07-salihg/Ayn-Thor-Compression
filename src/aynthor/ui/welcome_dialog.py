@@ -39,7 +39,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from aynthor.core.esde import resolve_roms_root
+from aynthor.core.device import target_from_breadcrumb
+from aynthor.core.esde import resolve_roms_root, usable_pc_folder
 from aynthor.core.settings import FormatSettings
 from aynthor.core.system import find_prod_keys
 from aynthor.core.tools.manager import ToolsManager
@@ -51,6 +52,7 @@ from aynthor.ui.destination import (
     list_folders,
     scan_devices,
 )
+from aynthor.ui.folder_dialog import pick_folder
 from aynthor.ui.tools_dialog import InstallWorker
 
 
@@ -228,8 +230,8 @@ class WelcomeDialog(QDialog):
 
         if self.settings.device is not None:
             self.device_radio.setChecked(True)
-        elif self.settings.esde_root:
-            self._roms = Path(self.settings.esde_root)
+        elif usable_pc_folder(self.settings.esde_root):
+            self._roms = Path(usable_pc_folder(self.settings.esde_root))
             self.roms_radio.setChecked(True)
         elif self.settings.output_dir:
             self.beside_radio.setChecked(True)
@@ -372,9 +374,21 @@ class WelcomeDialog(QDialog):
         self._update_next()
 
     def _pick(self) -> None:
-        folder = QFileDialog.getExistingDirectory(self, "Choose your ROMs folder")
-        if folder:
-            self.choose_destination(Destination.ROMS, Path(folder))
+        chosen = pick_folder(self, "Choose your ROMs folder")
+        if chosen is None:
+            return
+        if chosen.path:
+            self.choose_destination(Destination.ROMS, Path(chosen.path))
+            return
+        target = target_from_breadcrumb(chosen.names, self.device_picker.devices())
+        if target is None:
+            self.destination_hint.setText(
+                "That folder is not on a handheld this window can see. "
+                "Choose the storage in the list above.")
+            self.destination_hint.setVisible(True)
+            return
+        self.device_picker.select_target(target)
+        self.choose_destination(Destination.DEVICE)
 
     def _refresh_paths(self) -> None:
         if self._roms is None:

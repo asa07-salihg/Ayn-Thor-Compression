@@ -143,7 +143,8 @@ def _converts(item: QueueItem) -> bool:
 def _only_copies(item: QueueItem) -> bool:
     if item.mode is ConversionMode.MOVE:
         return True
-    if item.format is CompressionFormat.NDS_TRIM or item.mode is ConversionMode.DECOMPRESS:
+    if item.format in (CompressionFormat.NDS_TRIM, CompressionFormat.DEC_3DS) or (
+            item.mode is ConversionMode.DECOMPRESS):
         return False
     source = Path(item.member) if item.member else item.path
     return source.suffix.lower() == item.output.suffix.lower()

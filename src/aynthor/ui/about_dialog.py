@@ -75,7 +75,7 @@ class AboutDialog(QDialog):
     @staticmethod
     def _credits_html() -> str:
         rows = "<br>".join(
-            f'&nbsp;&nbsp;<a href="{spec.homepage}">{spec.label}</a> &mdash; {spec.license}'
+            f'&nbsp;&nbsp;<a href="{spec.homepage}">{spec.label}</a> - {spec.license}'
             for spec in INSTALLABLE
         )
         return f"<b>Built on</b><br>{rows}"

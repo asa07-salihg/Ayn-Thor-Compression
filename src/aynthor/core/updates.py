@@ -1,9 +1,9 @@
 """Check GitHub for a newer release, and install it.
 
-The app is a single exe with no installer, which is what makes it easy to
-put on a card and hard to keep current: nothing tells the user a new build
-exists. So it asks GitHub itself, the same way an external release tracker
-would, and can replace itself with what it finds.
+The app is a single exe with no installer. That is handy on a card and awkward
+to keep current: nothing tells the user a new build exists. So it asks GitHub
+itself, the same way an external release tracker would, and can replace itself
+with what it finds.
 
 Three things make that safe enough to do automatically:
 
@@ -201,15 +201,16 @@ def download_verified(release: Release,
 # for the process to go away before touching it, keeps the old build as .old
 # until the new one has started, and deletes itself last.
 # Characters the replacement script cannot carry through a batch variable.
-_UNSCRIPTABLE = ('%', '"', '\r', '\n')
+_UNSCRIPTABLE = ('"', '\r', '\n')
 
 _SHA256_RE = re.compile(r"[0-9a-f]{64}")
 
 _SWAP_SCRIPT = """@echo off
+chcp 65001 >nul
 setlocal
-set "TARGET={target}"
-set "NEW={new}"
-set "OLD={target}.old"
+set "TARGET=%AYN_TARGET%"
+set "NEW=%AYN_NEW%"
+set "OLD=%AYN_TARGET%.old"
 
 for /l %%i in (1,1,60) do (
     ping -n 2 127.0.0.1 >nul
@@ -254,14 +255,20 @@ def apply_update(download: Path) -> None:
                 "Download the new version and replace the file by hand.")
 
     script = target.parent / "aynthor-update.cmd"
-    script.write_text(
-        _SWAP_SCRIPT.format(target=target, new=new),
-        encoding="utf-8",
-    )
+    # Paths stay in the environment. A .cmd file is read in the OEM code
+    # page, so a name with ü or & never survived being written into the file.
+    script.write_text(_SWAP_SCRIPT, encoding="utf-8")
+    env = os.environ.copy()
+    env["AYN_TARGET"] = str(target)
+    env["AYN_NEW"] = str(new)
+    # A one-file build inherits _PYI_* and then looks for Python inside the
+    # old, already deleted, temp folder.
+    env["PYINSTALLER_RESET_ENVIRONMENT"] = "1"
 
     subprocess.Popen(
         ["cmd", "/c", str(script)],
         cwd=str(target.parent),
+        env=env,
         close_fds=True,
         creationflags=getattr(subprocess, "DETACHED_PROCESS", 0)
         | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0),
@@ -273,4 +280,10 @@ def can_self_update() -> bool:
     """False when running from source, or from a folder we cannot write to."""
     if not is_frozen():
         return False
-    return os.access(Path(sys.executable).resolve().parent, os.W_OK)
+    probe = Path(sys.executable).resolve().parent / ".aynthor-write-test"
+    try:
+        probe.write_text("ok", encoding="utf-8")
+        probe.unlink(missing_ok=True)
+    except OSError:
+        return False
+    return True

@@ -3,6 +3,26 @@
 Notable changes, newest first. Versions follow
 [semantic versioning](https://semver.org/).
 
+## 1.6.0
+
+- **Tools > Check for updates can install newer converters.** When a project has moved on, Update N tools downloads that build, hashes it, and keeps the hash next to the tool so the next open still trusts it. DolphinTool stays a hand copy because it has no checksum.
+- **7-Zip is 26.06 and rom-converto is 0.24.0.** After you move from 1.5.0, Tools shows Needs update for the old copies; Install / Update replaces them with the pins in this release.
+- **The ROMs folder on the handheld can be chosen.** The folder window lists a device that has no drive letter. Pick the handheld, its SD card, or the `ROMs` folder and games go there. A folder saved by an older build that showed up as a long `::{...}` id is ignored, so Add files works again.
+- **Stop stops the tool that is running.** Cancel ends chdman, 7-Zip and the other programs instead of waiting them out. If you stop while a game is on its way to the handheld, the copy already there is left alone.
+- **A file already on the handheld is not replaced by a different game.** Two discs that both list `track01.bin` no longer overwrite each other. `Game.chd` and `game.chd` in the same run no longer delete each other. A copy that arrives short is a failure, and the original on the PC is not deleted. A delete the device refuses is a failure too.
+- **A full card is refused before the conversion.** The free space is checked first, so a batch does not spend the time converting and then fail to send.
+- **Overwrite replaces an existing CHD.** That conflict setting now tells chdman to replace the file. A half-written CHD left by a stopped run is removed before the next Start.
+- **Unzip onto the handheld sends the files inside the folder.**
+- **Your folder names are kept.** A card that uses `genesis`, `sfc`, `neogeo`, `megacd` or `tg16` gets new games in those folders. A folder under `ROMs` that the app does not know is not filed as some other console. `Wii ISOs` is read as Wii.
+- **A list matches the title you typed.** `Tekken 3` no longer matches Tekken 2. The `.cue` is queued, not the `.bin` beside it. Lines that say `genesis`, `sfc` or `fba` are kept.
+- **Files that are already compressed stay that way.** `.zcci`, `.xcz`, `.zso` and `.dax` are copied. They are not expanded. Opening a PS2 or PSP CHD writes an `.iso`.
+- **A zip with no ROM in it is left where it is.** A zip that holds one ROM keeps that ROM's name.
+- **Switch games with similar names stay apart.** Bayonetta 2 is not filed as Bayonetta. An update or DLC still joins its own base game.
+- **Game folders follow the checkbox.** With it off, new rows stay flat. Turning it off takes apart rows that were grouped only because the box was on. A folder that already exists on the card is left as it is.
+- **The queue stays put during a run.** Rows cannot be deleted, renamed or retargeted until the batch finishes. Pressing Start again skips rows that already say Done. Dragging a row no longer deletes it. Dropping a file on a console heading uses that console's format. A file that did not shrink shows 0%, not a warning.
+- **An update installs from a folder whose name has ü, ı or &.** The new copy starts afterwards. A download that stops early is reported as incomplete.
+- **A tool that exits with an error is a failed row.** That covers 3DS decrypt and NDS trim. Zips that Windows wrote with Deflate64 are unpacked with 7-Zip. Accented names in a 7-Zip listing stay intact.
+
 ## 1.5.0
 
 - **Send games straight to a handheld over USB.** Plug an Android handheld in,

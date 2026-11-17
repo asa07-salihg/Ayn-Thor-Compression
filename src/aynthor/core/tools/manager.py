@@ -48,6 +48,8 @@ from aynthor.core.tools.manifest import (
     ToolFile,
     ToolSpec,
 )
+from aynthor.core.tools.pins import clear_pin, effective_file_hashes, save_pin
+from aynthor.core.tools.versions import url_for_tag
 
 Progress = Callable[[str], None]
 
@@ -112,26 +114,24 @@ class ToolsManager:
         return {spec.key: self.is_available(spec.key) for spec in INSTALLABLE}
 
     def matches_manifest(self, key: str) -> bool:
-        """Do the installed files still hash to what this release pinned?
+        """Do the installed files still hash to the effective pin?
 
-        Why
-            `is_available` only asks whether the file is there, which was enough
-            when a tool was installed once and never changed. It is not enough
-            once a pin moves: an older build's 7za sat in `tools/` forever,
-            reported as installed, and no update ever replaced it.
+        The release manifest is the default. A local `pins.json` entry from
+        Check for updates wins, so a newer build the user just installed is
+        not reported as Needs update against the older release pin.
 
-            An entry with no checksum (DolphinTool) cannot be told apart from an
-            older one and is treated as matching, which is the same admission the
-            Tools window already makes about it.
+        An entry with no checksum (DolphinTool) cannot be told apart from an
+        older one and is treated as matching.
         """
         spec = SPECS_BY_KEY.get(key)
         if spec is None or spec.pip_package:
             return True
-        for expected in spec.files:
-            if expected.sha256 is None:
+        expected_hashes = effective_file_hashes(spec)
+        for name, digest in expected_hashes.items():
+            if digest is None:
                 continue
-            path = self.tools_root / expected.name
-            if not path.is_file() or sha256_of(path) != expected.sha256:
+            path = self.tools_root / name
+            if not path.is_file() or sha256_of(path) != digest:
                 return False
         return True
 
@@ -208,6 +208,8 @@ class ToolsManager:
         if not spec.url:
             raise ToolError(spec.manual_hint or "This tool has to be installed by hand.")
 
+        # A release pin replace clears a local newer-pin left by Check for updates.
+        clear_pin(key)
         say(f"{spec.label}: downloading {spec.version}")
         scratch = self._scratch(spec.key)
         try:
@@ -220,6 +222,65 @@ class ToolsManager:
         finally:
             shutil.rmtree(scratch, ignore_errors=True)
 
+    def upgrade(self, key: str, tag: str, progress: Progress | None = None) -> None:
+        """Install upstream `tag`, hash it, and remember the hash in pins.json."""
+        say = progress or (lambda _msg: None)
+        spec = SPECS_BY_KEY[key]
+
+        if spec.pip_package:
+            say(f"{spec.label}: upgrading {spec.pip_package} with pip")
+            self._pip_install(spec.pip_package)
+            say(f"{spec.label}: installed")
+            return
+
+        if any(f.sha256 is None for f in spec.files):
+            raise ToolError(
+                f"{spec.label} publishes no checksum. Use 'Use my own DolphinTool...' "
+                "or wait for the next app release."
+            )
+
+        if key == "7z":
+            # The extras archive needs a matching 7zr bootstrap for this tag.
+            self.upgrade(BOOTSTRAP_KEY, tag, say)
+
+        if spec.needs_7zr and not (self.tools_root / "7zr.exe").is_file():
+            self.install(BOOTSTRAP_KEY, say)
+
+        try:
+            url = url_for_tag(spec, tag)
+        except ValueError as exc:
+            raise ToolError(str(exc)) from exc
+
+        say(f"{spec.label}: downloading {tag}")
+        scratch = self._scratch(spec.key)
+        try:
+            download = self._download(url, scratch)
+            staged = self._stage(spec, download, scratch)
+            hashes = {name: sha256_of(path) for name, path in staged.items()}
+            for name, path in staged.items():
+                shutil.copy2(path, self.tools_root / name)
+            save_pin(key, version=tag, url=url, files=hashes)
+            say(f"{spec.label}: installed {tag} and recorded its checksum")
+        finally:
+            shutil.rmtree(scratch, ignore_errors=True)
+
+    def upgrade_all(
+        self,
+        updates: list[tuple[str, str]],
+        progress: Progress | None = None,
+    ) -> list[str]:
+        """Install each (key, tag). One message per failure."""
+        say = progress or (lambda _msg: None)
+        errors: list[str] = []
+        for key, tag in updates:
+            try:
+                self.upgrade(key, tag, say)
+                self.refresh()
+            except Exception as exc:  # noqa: BLE001
+                message = f"{SPECS_BY_KEY[key].label}: {exc}"
+                errors.append(message)
+                say(f"FAILED {message}")
+        return errors
     # ------------------------------------------------------------------ steps
 
     def _scratch(self, key: str) -> Path:
@@ -344,18 +405,20 @@ class ToolsManager:
 
     @staticmethod
     def _verify(spec: ToolSpec, staged: dict[str, Path]) -> None:
+        expected_hashes = effective_file_hashes(spec)
         for wanted in spec.files:
             path = staged.get(wanted.name)
             if path is None:
                 continue
-            if wanted.sha256 is None:
+            digest = expected_hashes.get(wanted.name, wanted.sha256)
+            if digest is None:
                 # Deliberate, and documented per entry in the manifest.
                 continue
             actual = sha256_of(path)
-            if actual != wanted.sha256:
+            if actual != digest:
                 raise ToolError(
-                    f"{wanted.name} does not match the checksum in the manifest and was "
-                    f"not installed.\n  expected {wanted.sha256}\n  got      {actual}"
+                    f"{wanted.name} does not match the checksum and was not installed.\n"
+                    f"  expected {digest}\n  got      {actual}"
                 )
 
     @staticmethod

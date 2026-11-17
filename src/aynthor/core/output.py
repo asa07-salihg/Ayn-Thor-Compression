@@ -34,7 +34,7 @@ from pathlib import Path, PurePosixPath
 
 from aynthor.core import esde
 from aynthor.core.device.deliver import staging_root
-from aynthor.core.esde import ESDE_PLATFORM_FOLDERS
+from aynthor.core.esde import ESDE_PLATFORM_FOLDERS, FOLDER_TO_PLATFORM, usable_pc_folder
 from aynthor.core.formats import known_extensions, suggest_output_path
 from aynthor.core.models import CompressionFormat, ConversionMode
 from aynthor.core.settings import FormatSettings
@@ -352,17 +352,45 @@ def device_staging(settings: FormatSettings) -> Path | None:
     return staging_root(settings.device, base)
 
 
+def _platform_dir(platform: str, root: Path | None, source: Path) -> str:
+    """The folder name this card already uses for the platform.
+
+    A card that keeps Mega Drive in `genesis` must not grow a new `megadrive`
+    folder beside it. The source's own folder wins when it is one of the
+    names for this platform. Otherwise the first alternative that already
+    exists. A blank card gets the primary name.
+    """
+    folders = ESDE_PLATFORM_FOLDERS.get(platform, (platform,))
+    own = ""
+    for part in reversed(source.parts[:-1]):
+        if part.casefold() in {"roms", "rom"}:
+            break
+        if FOLDER_TO_PLATFORM.get(part.casefold()) == platform:
+            own = part
+            break
+    if root is not None:
+        try:
+            readable = root.is_dir()
+        except OSError:
+            readable = False
+        if readable:
+            if own and (root / own).is_dir():
+                return own
+            for name in folders:
+                if (root / name).is_dir():
+                    return name
+    return own or folders[0]
+
+
 def _destination(settings: FormatSettings, platform: str, path: Path) -> Path | None:
     """The folder a result goes in, or None to leave it beside its input."""
     staging = device_staging(settings)
     if staging is not None and platform:
-        folders = ESDE_PLATFORM_FOLDERS.get(platform)
-        if folders:
-            return staging / folders[0]
-    if settings.esde_root and platform and staging is None:
-        folders = ESDE_PLATFORM_FOLDERS.get(platform)
-        if folders:
-            return _roms_root(settings.esde_root) / folders[0]
+        return staging / _platform_dir(platform, staging, path)
+    folder = usable_pc_folder(settings.esde_root)
+    if folder and platform and staging is None:
+        root = _roms_root(folder)
+        return root / _platform_dir(platform, root, path)
     if settings.output_dir:
         return Path(settings.output_dir)
     return None

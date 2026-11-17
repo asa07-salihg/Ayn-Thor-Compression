@@ -23,15 +23,19 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-from aynthor.core.esde import search_dirs
+from aynthor.core.esde import FOLDER_TO_PLATFORM, search_dirs
+from aynthor.core.formats import known_extensions
 from aynthor.core.models import CompressionFormat
+from aynthor.core.output import is_game_folder
 from aynthor.core.presets import PRESETS, SKIP_PLATFORMS, PresetTable
 from aynthor.core.switch import (
     SWITCH_EXTENSIONS,
     detect_content_type,
     normalize_game_name,
     sort_switch_files,
+    title_family,
 )
+from aynthor.core.unpack import rom_files
 
 # Two line shapes are accepted, because real lists use both.
 #
@@ -162,11 +166,22 @@ def _game_keywords(game_name: str) -> list[str]:
     """
     clean = re.sub(r"[^\w\s\-'.&+:!#]", "", game_name).strip()
     words = re.split(r"[\s:/]+", clean)
-    return [w.lower() for w in words if len(w) > 2 or w.isdigit()][:4]
+    kept: list[str] = []
+    for word in words:
+        token = word.lower()
+        # "II" and "2" are what separate a sequel from the game before it.
+        if len(token) > 2 or token.isdigit() or re.fullmatch(r"[ivxlcdm]+", token):
+            kept.append(token)
+    return kept[:6]
+
+
+def _tokens(name: str) -> set[str]:
+    return set(re.findall(r"[a-z0-9]+", name.lower()))
 
 
 def _score_name(lowered_name: str, keywords: list[str]) -> int:
-    return sum(1 for keyword in keywords if keyword in lowered_name)
+    words = _tokens(lowered_name)
+    return sum(1 for keyword in keywords if keyword in words)
 
 
 class RomIndex:
@@ -191,10 +206,16 @@ class RomIndex:
             return cached
 
         found: list[tuple[Path, str]] = []
+        exts = known_extensions()
+        raw: list[Path] = []
         for directory in search_dirs(self.roms_root, platform):
             for candidate in directory.rglob("*"):
-                if candidate.is_file():
-                    found.append((candidate, candidate.stem.lower()))
+                if candidate.is_file() and candidate.suffix.lower() in exts:
+                    raw.append(candidate)
+        # A .cue beside its .bin is the disc. Indexing the .bin queued the
+        # track and handed it to chdman.
+        for candidate in rom_files(raw):
+            found.append((candidate, candidate.stem.lower()))
         self._by_platform[platform] = found
         return found
 
@@ -207,14 +228,20 @@ def _find_best_match(index: RomIndex, platform: str, game_name: str) -> Path | N
     # Two keywords have to hit before a match is accepted, which is what stops
     # "Mario Kart" from matching "Super Mario World". A title that yields only
     # one keyword has to settle for one, or it could never match at all.
-    required = 2 if len(keywords) >= 2 else 1
+    # A numbered title has to hit every word, so "Tekken 3" cannot land on
+    # "Tekken 2" and "Crash Bandicoot 2" cannot land on "Crash Bandicoot".
+    numbered = any(word.isdigit() or re.fullmatch(r"[ivxlcdm]+", word) for word in keywords)
+    required = len(keywords) if numbered else (2 if len(keywords) >= 2 else 1)
 
     best: Path | None = None
     best_score = 0
+    best_extra = 10**9
     for candidate, lowered in index.files(platform):
         score = _score_name(lowered, keywords)
-        if score > best_score:
+        extra = max(0, len(_tokens(lowered)) - score)
+        if score > best_score or (score == best_score and extra < best_extra):
             best_score = score
+            best_extra = extra
             best = candidate
     return best if best_score >= required else None
 
@@ -225,26 +252,23 @@ def _find_switch_rom_set(index: RomIndex, game_name: str) -> list[Path]:
     if best is None:
         return []
 
-    # A title that lives in its own folder brings the whole folder with it.
-    for directory in search_dirs(index.roms_root, "switch"):
-        try:
-            relative = best.parent.relative_to(directory)
-        except ValueError:
-            continue
-        if relative.parts:
-            siblings = [f for f in best.parent.iterdir()
-                        if f.is_file() and f.suffix.lower() in SWITCH_EXTENSIONS]
-            if siblings:
-                return sort_switch_files(siblings)
+    # Only a folder named like the game itself (Game.nsp) brings its siblings.
+    # switch/Base holding three different games must not all be queued as one.
+    if is_game_folder(best.parent):
+        siblings = [f for f in best.parent.iterdir()
+                    if f.is_file() and f.suffix.lower() in SWITCH_EXTENSIONS]
+        if siblings:
+            return sort_switch_files(siblings)
 
-    # Otherwise collect by normalised name across the whole switch tree.
     game_key = normalize_game_name(best)
-    keywords = _game_keywords(game_name)
+    family = title_family(best)
     matches: list[Path] = []
-    for candidate, lowered in index.files("switch"):
+    for candidate, _lowered in index.files("switch"):
         if candidate.suffix.lower() not in SWITCH_EXTENSIONS:
             continue
-        if normalize_game_name(candidate) == game_key or _score_name(lowered, keywords) >= 2:
+        same_name = normalize_game_name(candidate) == game_key
+        same_family = bool(family) and title_family(candidate) == family
+        if same_name or same_family:
             matches.append(candidate)
 
     return sort_switch_files(matches) if matches else [best]
@@ -298,15 +322,16 @@ def entries_to_queue(
     for entry in entries:
         if entry.platform in SKIP_PLATFORMS or entry.target_format in {"-", "Z64"}:
             continue
-        preset = table.get(entry.platform)
+        platform = FOLDER_TO_PLATFORM.get(entry.platform, entry.platform)
+        preset = table.get(platform)
         if preset is None:
             continue
 
-        for found in find_rom_files(roms_root, entry.platform, entry.game, index):
+        for found in find_rom_files(roms_root, platform, entry.game, index):
             options = dict(preset.options)
             # The list knows the real title; the filename usually does not.
             options["game_group"] = entry.game
-            if entry.platform == "switch":
+            if platform == "switch":
                 options["content_type"] = detect_content_type(found).value
-            result.append(QueuedEntry(found, entry.platform, preset.format, options))
+            result.append(QueuedEntry(found, platform, preset.format, options))
     return result

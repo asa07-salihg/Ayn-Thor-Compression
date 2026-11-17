@@ -48,7 +48,13 @@ def bundle_dir() -> Path | None:
 def ensure_tools_extracted() -> Path:
     """Copy bundled tools next to the exe. Returns that `tools/` folder."""
     dest = app_root() / "tools"
-    dest.mkdir(parents=True, exist_ok=True)
+    try:
+        dest.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        from aynthor.core.system import app_data_dir
+
+        dest = app_data_dir() / "tools"
+        dest.mkdir(parents=True, exist_ok=True)
 
     bundle = bundle_dir()
     source = (bundle / "tools") if bundle else None
@@ -66,5 +72,8 @@ def ensure_tools_extracted() -> Path:
         # Replacing a tool is the Tools window's job, and it checks hashes.
         if target.is_file():
             continue
-        shutil.copy2(item, target)
+        try:
+            shutil.copy2(item, target)
+        except OSError:
+            continue
     return dest

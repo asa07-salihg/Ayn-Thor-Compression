@@ -133,6 +133,38 @@ def test_a_stopped_send_leaves_nothing_on_the_device(server, thor, tmp_path):
     assert thor.commits == 0
 
 
+def test_the_size_check_reads_what_the_device_stored(server, thor, tmp_path):
+    """A short file on the device must not look complete just because the
+    copy on this PC is the right length."""
+    from aynthor.core.device.fs import Entry
+
+    local = tmp_path / "Game.chd"
+    local.write_bytes(b"abcd" * 1001)
+    target = DeviceTarget(thor.device_id, "AYN Thor", "disk", "ROMs")
+    with open_target(target, server) as fs:
+        real = fs.device.entry
+
+        def short(object_id):
+            entry, kind = real(object_id)
+            if entry.name == "Game.chd":
+                return Entry(entry.name, False, len(local.read_bytes()) // 2), kind
+            return entry, kind
+
+        fs.device.entry = short
+        fs.upload(local, PurePosixPath("psx/Game.chd"))
+        landed = fs.stat(PurePosixPath("psx/Game.chd"))
+        assert landed is not None
+        assert landed.size == len(local.read_bytes()) // 2
+
+
+def test_a_delete_the_device_did_not_do_is_not_success(server, thor):
+    thor.refuse_delete = True
+    target = DeviceTarget(thor.device_id, "AYN Thor", "disk", "ROMs")
+    with open_target(target, server) as fs, pytest.raises(DeviceError, match="could not remove"):
+        fs.remove(PurePosixPath("psx/Crash Bandicoot.chd"))
+    assert thor.find("disk", "ROMs", "psx", "Crash Bandicoot.chd") is not None
+
+
 def test_a_file_can_be_removed(server, thor):
     target = DeviceTarget(thor.device_id, "AYN Thor", "disk", "ROMs")
     with open_target(target, server) as fs:

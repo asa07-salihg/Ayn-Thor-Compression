@@ -86,6 +86,35 @@ def test_a_split_multibyte_character_is_reassembled():
     assert result.stdout.count("ü") == 20000
 
 
+def test_stop_ends_the_running_tool():
+    import threading
+    import time
+
+    from aynthor.core import system
+
+    system.clear_tool_stop()
+    holder: dict = {}
+
+    def work() -> None:
+        holder["result"] = run_tool(
+            sys.executable, ["-c", "import time; time.sleep(30)"],
+            on_output=lambda _line: None,
+        )
+
+    thread = threading.Thread(target=work)
+    thread.start()
+    try:
+        deadline = time.monotonic() + 2
+        while system._tool_process is None and time.monotonic() < deadline:
+            time.sleep(0.02)
+        system.stop_running_tool()
+        thread.join(3)
+        assert not thread.is_alive()
+        assert holder["result"].returncode != 0
+    finally:
+        system.clear_tool_stop()
+
+
 def test_without_a_callback_it_still_captures_everything():
     result = run_tool(sys.executable, ["-c", "print('quiet')"])
     assert result.returncode == 0

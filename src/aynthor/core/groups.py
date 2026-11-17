@@ -226,7 +226,7 @@ def group_folder_name(item: QueueItem, settings: FormatSettings) -> str:
                 return item.path.parent.name
             return aligned_folder(item.path.parent.name, item.output.name)
         return item.path.parent.name
-    if item.game_group:
+    if item.game_group and settings.game_folders:
         suffix = item.output.suffix or Path(item.source_name).suffix
         return f"{safe_folder_name(item.game_group)}{suffix}"
     return ""

@@ -440,6 +440,7 @@ def test_switch_dlc_joins_the_base_game_tree(app, tmp_path):
         (folder / name).write_bytes(b"\0" * 16)
 
     window = MainWindow()
+    window.settings.game_folders = True
     window.show()
     window._add([folder])
     app.processEvents()
@@ -574,6 +575,7 @@ def test_cover_set_dlc_joins_base_without_title_ids(app, tmp_path):
         (folder / name).write_bytes(b"\0" * 16)
 
     window = MainWindow()
+    window.settings.game_folders = True
     window.show()
     window._add([folder])
     app.processEvents()
@@ -602,6 +604,7 @@ def test_scene_named_dlc_packs_share_one_tree(app, tmp_path):
         (folder / name).write_bytes(b"\0" * 16)
 
     window = MainWindow()
+    window.settings.game_folders = True
     window.show()
     window._add([folder])
     app.processEvents()
@@ -1790,6 +1793,7 @@ def test_a_file_dropped_on_a_game_folder_joins_that_game(app, tmp_path):
     stray.write_bytes(b"\0" * 16)
 
     window = MainWindow()
+    window.settings.game_folders = True
     window.show()
     window._add([folder])
     app.processEvents()
@@ -1864,6 +1868,33 @@ def _thor(problem=""):
         FoundStorage("Internal shared storage", 465 << 30, 399 << 30, None),
         FoundStorage("disk", 953 << 30, 40 << 30, "ROMs"),
     ))
+
+
+def test_choosing_the_roms_folder_on_the_device_is_what_gets_saved(app):
+    from aynthor.core.device import DeviceTarget
+    from aynthor.ui.destination import DeviceFolderDialog
+
+    def listed(_target, path):
+        if str(path) in (".", ""):
+            return ["Pictures", "ROMs"]
+        if str(path) == "ROMs":
+            return ["psx", "snes"]
+        return []
+
+    target = DeviceTarget("usb#thor", "AYN Thor", "disk", "ROMs")
+    dialog = DeviceFolderDialog(target, listed)
+    dialog.show()
+    app.processEvents()
+    top = dialog.tree.topLevelItem(0)
+    _wait_for(app, lambda: top.childCount() > 1)
+    roms = next(top.child(i) for i in range(top.childCount())
+                if top.child(i).text(0) == "ROMs")
+    dialog.tree.setCurrentItem(roms)
+    dialog.use_button.click()
+    app.processEvents()
+    assert dialog.chosen is not None
+    assert dialog.chosen.as_posix() == "ROMs"
+    dialog.close()
 
 
 def test_the_sd_card_with_a_roms_folder_is_picked_and_saved(app):

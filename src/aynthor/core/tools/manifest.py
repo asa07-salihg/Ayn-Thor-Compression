@@ -74,12 +74,12 @@ TOOL_SPECS: tuple[ToolSpec, ...] = (
         description="Standalone extractor used to unpack the other tools' .7z archives.",
         homepage="https://www.7-zip.org/",
         license="LGPL-2.1-or-later",
-        version="26.03",
-        url="https://github.com/ip7z/7zip/releases/download/26.03/7zr.exe",
+        version="26.06",
+        url="https://github.com/ip7z/7zip/releases/download/26.06/7zr.exe",
         archive="exe",
         files=(
             ToolFile("7zr.exe",
-                     sha256="ad4c82fadcbdf93c03b4fc440f300509c7d60c5c2f4d183e35d9d70d6957037d"),
+                     sha256="e80db2dad715a6c5adabe292d31ed54e11f4e9b99ca349827b50573b175891bc"),
         ),
     ),
     ToolSpec(
@@ -140,8 +140,8 @@ TOOL_SPECS: tuple[ToolSpec, ...] = (
         description="7z and ZIP archives for cartridge ROMs and arcade romsets.",
         homepage="https://www.7-zip.org/",
         license="LGPL-2.1-or-later",
-        version="26.03",
-        url="https://github.com/ip7z/7zip/releases/download/26.03/7z2603-extra.7z",
+        version="26.06",
+        url="https://github.com/ip7z/7zip/releases/download/26.06/7z2606-extra.7z",
         archive="7z",
         needs_7zr=True,
         # The extras archive ships x86 at the root with x64/ and arm64/ beside
@@ -149,9 +149,9 @@ TOOL_SPECS: tuple[ToolSpec, ...] = (
         # found" installed the 32-bit build on 64-bit machines.
         files=(
             ToolFile("7za.exe", member="x64/7za.exe",
-                     sha256="edbee35370e14030e4c785cf88200f42dc651c1eb4217c1e3963c38a12f099b0"),
+                     sha256="dd3757f31c97e33776f2590317d4fb12f2da075db3dbb1e3f94d0f2a01d84ffa"),
             ToolFile("7za.dll", member="x64/7za.dll",
-                     sha256="876077825e49f5a39fb472532080b91a41fec508c714eab8a51af5a51183eba0"),
+                     sha256="2fcf9cea76d55f16c8c9113b63ffb82c66e96bc679b22459436031c252916551"),
         ),
         formats=("7z", "ZIP"),
     ),
@@ -176,13 +176,13 @@ TOOL_SPECS: tuple[ToolSpec, ...] = (
         description="WUA for Wii U, and the preferred ZCCI engine for 3DS.",
         homepage="https://github.com/DevYukine/rom-converto",
         license="MIT",
-        version="0.21.0",
-        url=("https://github.com/DevYukine/rom-converto/releases/download/v0.21.0/"
+        version="0.24.0",
+        url=("https://github.com/DevYukine/rom-converto/releases/download/v0.24.0/"
              "rom-converto-cli-windows-x64.exe"),
         archive="exe",
         files=(
             ToolFile("rom-converto.exe",
-                     sha256="54da3336d2977633ac2b4029dd7f47ec733fccf27d6cb59ad9d5ae76792b4e22"),
+                     sha256="bee0ee3bac4183f8de3c9fd00fde3da6f73d92a2af2db203b525ea421d7ea5a4"),
         ),
         formats=("WUA", "ZCCI"),
     ),

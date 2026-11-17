@@ -280,8 +280,12 @@ class WpdDevice:
         finally:
             client.release()
         self._device = device
-        self._content = device.get("Content", IPortableDeviceContent)
-        self._properties = self._content.get("Properties", IPortableDeviceProperties)
+        try:
+            self._content = device.get("Content", IPortableDeviceContent)
+            self._properties = self._content.get("Properties", IPortableDeviceProperties)
+        except ComError as exc:
+            self.close()
+            raise _explain(exc, self.info.name) from exc
 
     def close(self) -> None:
         for com in (self._properties, self._content):
@@ -314,7 +318,11 @@ class WpdDevice:
             while True:
                 batch = (c_void_p * 64)()
                 fetched = c_uint32(0)
-                hr = enum.call("Next", (c_uint32, c_void_p, c_void_p), 64, batch, byref(fetched))
+                try:
+                    hr = enum.call(
+                        "Next", (c_uint32, c_void_p, c_void_p), 64, batch, byref(fetched))
+                except ComError as exc:
+                    raise _explain(exc, self.info.name) from exc
                 ids.extend(enum.take_string(batch[i]) for i in range(fetched.value))
                 if hr == S_FALSE or fetched.value == 0:
                     break
@@ -474,10 +482,16 @@ class WpdDevice:
             variant.pointer = ctypes.addressof(text)
             ids.call("Add", (c_void_p,), byref(variant))   # the collection copies it
             try:
-                self.content.call("Delete", (c_uint32, c_void_p, c_void_p),
-                                  PORTABLE_DEVICE_DELETE_NO_RECURSION, ids.address, None)
+                removed = self.content.call(
+                    "Delete", (c_uint32, c_void_p, c_void_p),
+                    PORTABLE_DEVICE_DELETE_NO_RECURSION, ids.address, None)
             except ComError as exc:
                 raise DeviceError(f"{self.info.name} would not remove the file ({exc}).") from exc
+            # S_FALSE means at least one object was not deleted. Treating that
+            # as success drops it from the cache and the next send writes a
+            # second copy beside the one still there.
+            if removed == S_FALSE:
+                raise DeviceError(f"{self.info.name} could not remove the file.")
 
 
 # ----------------------------------------------------- one storage, by path
@@ -571,8 +585,12 @@ class WpdStorage:
         folder_id = self._folder_id(parts[:-1], create_missing=True)
         name = parts[-1]
         object_id = self.device.upload(folder_id, name, local, on_progress, cancelled)
-        size = local.stat().st_size
-        self._listing(folder_id)[key(name)] = (object_id, Entry(name, False, size))
+        # The size on the device, not the size of the file on this PC. The
+        # check after a send compares the two, and caching the local size
+        # made a short copy look complete.
+        recorded, _kind = self.device.entry(object_id)
+        self._listing(folder_id)[key(name)] = (
+            object_id, Entry(recorded.name or name, False, recorded.size))
 
     def remove(self, path: PurePosixPath) -> None:
         parts = self._parts(path)

@@ -23,7 +23,9 @@ import os
 import platform
 import re
 import subprocess
+import threading
 from collections.abc import Callable
+from contextlib import suppress
 from pathlib import Path
 
 from aynthor.core.runtime import app_root, ensure_tools_extracted, is_frozen
@@ -34,6 +36,25 @@ IS_WINDOWS = platform.system() == "Windows"
 # newline; both mean "this line is complete".
 _LINE_BREAK = re.compile(r"[\r\n]")
 _OUTPUT_CHUNK = 8192
+_tool_lock = threading.Lock()
+_tool_stop = threading.Event()
+_tool_process: subprocess.Popen | None = None
+
+
+def stop_running_tool() -> None:
+    """End the converter that is running now. Stop used to wait for it."""
+    _tool_stop.set()
+    with _tool_lock:
+        process = _tool_process
+    if process is None or process.poll() is not None:
+        return
+    with suppress(OSError):
+        process.kill()
+
+
+def clear_tool_stop() -> None:
+    """A new batch is allowed to run tools. The previous Stop does not stick."""
+    _tool_stop.clear()
 
 
 def no_window_kwargs() -> dict:
@@ -128,19 +149,28 @@ def run_tool(
     if env:
         merged_env.update(env)
     command = [str(executable), *args]
+    if _tool_stop.is_set():
+        return subprocess.CompletedProcess(command, 1, "", "")
 
     if on_output is None:
-        return subprocess.run(
+        process = subprocess.Popen(
             command,
             cwd=str(cwd) if cwd else None,
             env=merged_env,
-            capture_output=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
             text=True,
             encoding="utf-8",
             errors="replace",
-            check=False,
             **no_window_kwargs(),
         )
+        _claim(process)
+        try:
+            stdout, stderr = process.communicate()
+        finally:
+            _release(process)
+        return subprocess.CompletedProcess(
+            command, process.returncode, stdout or "", stderr or "")
 
     # Binary pipe, decoded here. `read1` returns whatever has arrived instead
     # of blocking for a full buffer, which is what makes progress work: the
@@ -157,6 +187,7 @@ def run_tool(
         stderr=subprocess.STDOUT,
         **no_window_kwargs(),
     )
+    _claim(process)
     assert process.stdout is not None
 
     decoder = codecs.getincrementaldecoder("utf-8")("replace")
@@ -174,12 +205,33 @@ def run_tool(
                 on_output(part)
         return buffer
 
-    while True:
-        chunk = process.stdout.read1(_OUTPUT_CHUNK)
-        if not chunk:
-            break
-        flush(decoder.decode(chunk))
-    flush(decoder.decode(b"", final=True), final=True)
-
-    process.stdout.close()
+    try:
+        while True:
+            chunk = process.stdout.read1(_OUTPUT_CHUNK)
+            if not chunk:
+                break
+            flush(decoder.decode(chunk))
+        flush(decoder.decode(b"", final=True), final=True)
+    finally:
+        _release(process)
+        process.stdout.close()
+        if process.poll() is None:
+            process.wait()
     return subprocess.CompletedProcess(command, process.wait(), "\n".join(lines), "")
+
+
+def _claim(process: subprocess.Popen) -> None:
+    global _tool_process
+    with _tool_lock:
+        if _tool_stop.is_set():
+            with suppress(OSError):
+                process.kill()
+        else:
+            _tool_process = process
+
+
+def _release(process: subprocess.Popen) -> None:
+    global _tool_process
+    with _tool_lock:
+        if _tool_process is process:
+            _tool_process = None

@@ -26,6 +26,7 @@ from aynthor.core.device.fs import (
 __all__ = [
     "BREADCRUMB", "DeviceError", "DeviceFS", "DeviceTarget", "Entry", "FoundDevice", "FoundStorage",
     "MemoryFS", "SendCancelled", "available", "com_thread", "open_target", "scan",
+    "target_from_breadcrumb",
 ]
 
 # The folder ES-DE looks in, at the top of a storage.
@@ -67,6 +68,58 @@ class FoundDevice:
     def target(self, storage: FoundStorage, root: str | None = None) -> DeviceTarget:
         return DeviceTarget(self.device_id, self.name, storage.name,
                             root or storage.roms or ROMS_FOLDER)
+
+
+def target_from_breadcrumb(names: tuple[str, ...] | list[str],
+                           devices: list[FoundDevice]) -> DeviceTarget | None:
+    """The device folder a This PC selection names.
+
+    `("AYN Thor", "disk", "ROMs")` is that device's SD card, rooted at ROMs.
+    `("AYN Thor", "disk")` uses the ROMs folder already on that storage.
+    `("AYN Thor",)` uses the storage that already has a ROMs folder, the SD
+    card before internal storage. A folder under ROMs still roots at ROMs,
+    so games go into the console folders inside it.
+    """
+    parts = [name for name in names if name]
+    if not parts:
+        return None
+    device = next((item for item in devices
+                   if not item.problem and item.storages
+                   and key(item.name) == key(parts[0])), None)
+    if device is None:
+        return None
+    if len(parts) == 1:
+        storage = _preferred_storage(device.storages)
+        if storage is None:
+            return None
+        return device.target(storage, storage.roms or ROMS_FOLDER)
+    storage = next((item for item in device.storages if key(item.name) == key(parts[1])), None)
+    if storage is None:
+        return None
+    return device.target(storage, _root_under_storage(parts[2:], storage.roms))
+
+
+def _preferred_storage(storages: tuple[FoundStorage, ...]) -> FoundStorage | None:
+    def external(storage: FoundStorage) -> bool:
+        return "internal" not in storage.name.casefold()
+
+    with_roms = [item for item in storages if item.roms and external(item)]
+    if with_roms:
+        return with_roms[0]
+    with_roms = [item for item in storages if item.roms]
+    if with_roms:
+        return with_roms[0]
+    outside = [item for item in storages if external(item)]
+    return (outside or list(storages) or [None])[0]
+
+
+def _root_under_storage(rest: list[str], known_roms: str | None) -> str:
+    if not rest:
+        return known_roms or ROMS_FOLDER
+    for index, part in enumerate(rest):
+        if key(part) == key(ROMS_FOLDER):
+            return "/".join(rest[:index + 1])
+    return "/".join(rest)
 
 
 def scan(runtime: Runtime) -> list[FoundDevice]:

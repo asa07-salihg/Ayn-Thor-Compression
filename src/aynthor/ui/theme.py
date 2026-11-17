@@ -337,6 +337,7 @@ QTreeView {{
 }}
 QTreeView::item {{ padding: 6px 8px; border: none;
                    border-bottom: 1px solid {divider}; min-height: 26px; }}
+QTreeView::item:selected {{ background: {subtleHover}; color: {text}; }}
 QHeaderView {{ background: {card}; }}
 QHeaderView::section {{
     background: {card}; color: {textSecond}; font-size: 13px;

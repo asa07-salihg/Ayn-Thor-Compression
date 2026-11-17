@@ -23,7 +23,6 @@ from PySide6.QtWidgets import (
     QAbstractItemView,
     QButtonGroup,
     QDialog,
-    QFileDialog,
     QFrame,
     QHBoxLayout,
     QLabel,
@@ -47,10 +46,12 @@ from aynthor.core.device import (
     com_thread,
     open_target,
     scan,
+    target_from_breadcrumb,
 )
-from aynthor.core.esde import resolve_roms_root
+from aynthor.core.esde import resolve_roms_root, usable_pc_folder
 from aynthor.core.settings import FormatSettings
 from aynthor.ui import icons, theme
+from aynthor.ui.folder_dialog import pick_folder
 from aynthor.ui.queue_view import human_size
 
 Scanner = Callable[[], list[FoundDevice]]
@@ -79,8 +80,9 @@ class Choice:
     def from_settings(cls, settings: FormatSettings) -> Choice:
         if settings.device is not None:
             return cls(Where.DEVICE, settings.device)
-        if settings.esde_root:
-            return cls(Where.FOLDER, folder=settings.esde_root)
+        folder = usable_pc_folder(settings.esde_root)
+        if folder:
+            return cls(Where.FOLDER, folder=folder)
         return cls(Where.BESIDE)
 
 
@@ -88,8 +90,9 @@ def describe(settings: FormatSettings) -> str:
     """One line for the bottom bar and the settings page."""
     if settings.device is not None:
         return f"Sending to {settings.device.label}"
-    if settings.esde_root:
-        return f"Saving to {resolve_roms_root(Path(settings.esde_root))}"
+    folder = usable_pc_folder(settings.esde_root)
+    if folder:
+        return f"Saving to {resolve_roms_root(Path(folder))}"
     if settings.output_dir:
         return f"Saving to {settings.output_dir}"
     return "Saving next to the original files"
@@ -128,6 +131,19 @@ class _Worker(QObject):
             self.failed.emit(str(exc))
 
 
+class _Handoff(QObject):
+    """A signal that lives on the window's thread.
+
+    Connecting the worker's result straight to a plain function runs that
+    function on the worker. Filling the folder tree from there corrupts it,
+    and the ROMs row the user then clicks has no path, so Use this folder
+    does nothing.
+    """
+
+    result = Signal(object)
+    problem = Signal(str)
+
+
 class _Background:
     """Run one call on a thread and deliver its result on the window's."""
 
@@ -140,9 +156,12 @@ class _Background:
         thread = QThread(self._parent)
         worker = _Worker(job)
         worker.moveToThread(thread)
+        handoff = _Handoff(self._parent)
         thread.started.connect(worker.run)
-        worker.done.connect(done)
-        worker.failed.connect(failed)
+        worker.done.connect(handoff.result)
+        worker.failed.connect(handoff.problem)
+        handoff.result.connect(done)
+        handoff.problem.connect(failed)
         worker.done.connect(thread.quit)
         worker.failed.connect(thread.quit)
         pair = (thread, worker)
@@ -293,6 +312,37 @@ class DevicePicker(QWidget):
                 "it, and choose File transfer in the USB notification on it.")
         self._selection_changed()
 
+    def devices(self) -> list[FoundDevice]:
+        found: list[FoundDevice] = []
+        seen: set[str] = set()
+        for device, _storage in self._found:
+            if device.device_id in seen:
+                continue
+            seen.add(device.device_id)
+            found.append(device)
+        return found
+
+    def select_target(self, target: DeviceTarget) -> None:
+        """Show `target` and remember the folder the user picked on it."""
+        matched: tuple[FoundDevice, FoundStorage] | None = None
+        for index, (device, storage) in enumerate(self._found):
+            if (device.name.casefold() == target.device_name.casefold()
+                    and storage.name.casefold() == target.storage.casefold()):
+                matched = (device, storage)
+                self.list.setCurrentRow(index)
+                break
+        if matched is None:
+            self._current = target
+            self._root_override[(target.device_name, target.storage)] = target.root
+        else:
+            device, storage = matched
+            self._current = device.target(storage, target.root)
+            self._root_override[(device.name, storage.name)] = target.root
+        chosen = self.target()
+        if chosen is not None:
+            self.status.setText(f"Games go to {chosen.label}.")
+        self.changed.emit()
+
     def _preferred_row(self) -> int:
         """The storage chosen last time; otherwise one that already has a ROMs
         folder, the SD card before internal storage; otherwise the first."""
@@ -329,9 +379,17 @@ class DevicePicker(QWidget):
             return
         dialog = DeviceFolderDialog(target, self._lister, self)
         if dialog.exec() == QDialog.DialogCode.Accepted and dialog.chosen is not None:
-            self._root_override[(target.device_name, target.storage)] = \
-                dialog.chosen.as_posix()
-            self.status.setText(f"Games go to {self.target().label}.")  # type: ignore[union-attr]
+            chosen = dialog.chosen.as_posix()
+            key = (target.device_name, target.storage)
+            # The storage row itself means "the ROMs folder already on it".
+            # A path of "." would send games beside ROMs instead of into it.
+            if chosen in ("", "."):
+                self._root_override.pop(key, None)
+            else:
+                self._root_override[key] = chosen
+            current = self.target()
+            if current is not None:
+                self.status.setText(f"Games go to {current.label}.")
             self.changed.emit()
 
     def close_down(self) -> None:
@@ -406,8 +464,10 @@ class DeviceFolderDialog(QDialog):
 
     def _use(self) -> None:
         item = self.tree.currentItem()
+        while item is not None and item.data(0, Qt.ItemDataRole.UserRole) is None:
+            item = item.parent()
         value = item.data(0, Qt.ItemDataRole.UserRole) if item is not None else None
-        if value is None:
+        if not value:
             return
         self.chosen = PurePosixPath(value)
         self.accept()
@@ -505,11 +565,31 @@ class DestinationDialog(QDialog):
         return card
 
     def _pick_folder(self) -> None:
-        path = QFileDialog.getExistingDirectory(self, "Choose your ROMs folder")
-        if path:
-            self._folder = str(resolve_roms_root(Path(path)))
+        chosen = pick_folder(self, "Choose your ROMs folder")
+        if chosen is None:
+            return
+        if chosen.path:
+            self._folder = str(resolve_roms_root(Path(chosen.path)))
             self.folder_radio.setChecked(True)
             self._refresh()
+            return
+        devices = self.picker.devices()
+        if not devices:
+            try:
+                devices = self.picker._scanner()
+            except OSError:
+                devices = []
+        target = target_from_breadcrumb(chosen.names, devices)
+        if target is None:
+            self.device_radio.setChecked(True)
+            self.hint.setText(
+                "That folder is not on a handheld this window can see. "
+                "Choose the storage in the list above.")
+            self._refresh()
+            return
+        self.picker.select_target(target)
+        self.device_radio.setChecked(True)
+        self._refresh()
 
     def choice(self) -> Choice:
         if self.device_radio.isChecked():

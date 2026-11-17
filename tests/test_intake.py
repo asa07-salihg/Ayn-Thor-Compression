@@ -109,20 +109,16 @@ def test_a_zip_of_a_cartridge_rom_becomes_7z_in_a_game_folder(tmp_path: Path):
     assert row.output == tmp_path / "ROMs" / "snes" / "Mario.7z" / "Mario.7z"
 
 
-def test_a_zip_in_snes_is_not_skipped_as_an_arcade_romset(tmp_path: Path):
-    """`.zip` used to mean FBNeo, so a cartridge zip with no inner ROM the
-    app recognised was skipped as 'already a zip' while the same title as
-    `.7z` was queued."""
+def test_a_zip_with_no_rom_inside_is_left_as_it_is(tmp_path: Path):
+    """Wrapping readme.txt in a 7z nests an archive and, with delete-source,
+    throws away the zip. It is not an arcade romset either."""
     archive = _zip(tmp_path / "ROMs" / "snes" / "Mario.zip",
                    {"readme.txt": b"hi"})
     items, reason = queue_items_for(archive, FormatSettings())
-    assert reason is None
-    assert len(items) == 1
-    row = items[0]
-    assert row.member == ""
-    assert row.platform == "snes"
-    assert row.format is CompressionFormat.SEVEN_ZIP
-    assert row.output.suffix == ".7z"
+    assert items == []
+    assert reason is not None
+    assert "left as it is" in reason
+    assert "fbneo" not in reason.casefold()
 
 
 def test_an_unreadable_zip_in_snes_still_queues_as_7z(tmp_path: Path):
@@ -243,6 +239,16 @@ def test_an_archive_of_one_game_is_still_one_folder(tmp_path: Path):
     items, _ = queue_items_for(archive, settings)
     assert {item.output.parent.name for item in items} == {"Final Fantasy VII.chd"}
     assert len({item.output for item in items}) == 2
+
+
+def test_a_cia_stays_a_decrypt_when_games_go_to_a_card():
+    """The decrypted file keeps the .cia suffix. That must not turn the row
+    into a copy, or delete-source removes the dump and leaves it encrypted."""
+    from aynthor.core.intake import row_mode
+
+    mode = row_mode(Path("Game.cia"), CompressionFormat.DEC_3DS, {},
+                    FormatSettings(esde_root="D:/ROMs", game_folders=True))
+    assert mode is ConversionMode.COMPRESS
 
 
 def test_a_readable_rar_with_nothing_inside_does_not_blame_the_tool(

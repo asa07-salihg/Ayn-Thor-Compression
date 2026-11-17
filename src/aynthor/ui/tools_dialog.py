@@ -9,24 +9,13 @@ Downloads run on a worker thread with a live log rather than a spinner,
 because a failed download is common (a release asset moves, a proxy
 interferes) and the reason matters more than the progress.
 
-**Check for updates** asks each project for its tags and marks anything
-behind. It does not offer to install what it finds, and that is deliberate
-rather than unfinished: the guarantee this app makes is that nothing
-reaches `tools/` unless it matches a checksum recorded in the manifest.
-Fetching a version that is by definition not in the manifest would mean
-running an executable nobody checked. A newer tool ships in the next
-release of this app, after someone has read the upstream changelog for
-flag changes.
+**Check for updates** asks each project for its tags. When something is
+behind, **Update N tools** downloads that tag, hashes it, and remembers
+the hash in `tools/pins.json` so the next open still trusts it.
 
-The Status column therefore has three states, not two. A tool can be
-present and still not be the one this release pins, which is what happens
-to everyone who installed a tool before the pin moved. Those rows say
-**Needs update** and the button replaces them, so a pin bumped in a
-release reaches the machine rather than sitting in a changelog.
-
-Versions, licences and the update check sit behind "Show details". They
-matter to someone checking where a binary came from, and only crowd the
-window for someone who just wants their games converted.
+A tool can also be present and still not be the one this release pins,
+which is what happens after an app update moves a pin. Those rows say
+**Needs update** and the Download button replaces them from the manifest.
 
 DolphinTool is offered two ways. Dolphin publishes no checksums for its
 Windows builds, so if the user already has Dolphin, copying the exe they
@@ -62,6 +51,7 @@ from PySide6.QtWidgets import (
 
 from aynthor.core.tools.manager import ToolsManager
 from aynthor.core.tools.manifest import INSTALLABLE
+from aynthor.core.tools.pins import effective_version
 from aynthor.core.tools.versions import Status, VersionReport, check_all, releases_url
 from aynthor.ui import theme
 
@@ -100,6 +90,20 @@ class _VersionWorker(QThread):
         self.done.emit()
 
 
+class _UpgradeWorker(QThread):
+    """Installs each behind tool's newest tag off the UI thread."""
+
+    log = Signal(str)
+    done = Signal(list)
+
+    def __init__(self, updates: list[tuple[str, str]]) -> None:
+        super().__init__()
+        self._updates = updates
+
+    def run(self) -> None:
+        self.done.emit(ToolsManager().upgrade_all(self._updates, progress=self.log.emit))
+
+
 class ToolsDialog(QDialog):
     COL_TOOL, COL_STATUS, COL_PINNED, COL_LATEST, COL_FORMATS, COL_LICENCE = range(6)
 
@@ -120,8 +124,11 @@ class ToolsDialog(QDialog):
         self.manager = ToolsManager()
         self._install_worker: InstallWorker | None = None
         self._version_worker: _VersionWorker | None = None
+        self._upgrade_worker: _UpgradeWorker | None = None
         # Reasons already written to the log this run; see `_on_version_report`.
         self._reasons_logged: set[str] = set()
+        # (key, tag) found by the last Check for updates run.
+        self._pending_upgrades: list[tuple[str, str]] = []
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(14, 14, 14, 12)
@@ -193,6 +200,7 @@ class ToolsDialog(QDialog):
         for column in self._DETAIL_COLUMNS:
             self.table.setColumnHidden(column, not shown)
         self.check_button.setVisible(shown)
+        self.upgrade_button.setVisible(shown and bool(self._pending_upgrades))
         self.location.setVisible(shown)
 
     def _build_buttons(self) -> QHBoxLayout:
@@ -206,12 +214,19 @@ class ToolsDialog(QDialog):
 
         self.check_button = QPushButton("Check for updates")
         self.check_button.setToolTip(
-            "Ask each project for its latest tag.\n\n"
-            "Nothing is installed from this: every download is verified against a\n"
-            "checksum recorded in this release, so a newer tool arrives with the\n"
-            "next update of the app.")
+            "Ask each project for its latest tag. If something is newer, an\n"
+            "Update button appears that downloads it and records its checksum.")
         self.check_button.clicked.connect(self._check_versions)
         row.addWidget(self.check_button)
+
+        self.upgrade_button = QPushButton("Update tools")
+        self.upgrade_button.setVisible(False)
+        self.upgrade_button.setProperty("accent", True)
+        self.upgrade_button.setToolTip(
+            "Download the newer builds found by Check for updates.\n"
+            "Each file is hashed and the hash is kept next to the tool.")
+        self.upgrade_button.clicked.connect(self._upgrade_behind)
+        row.addWidget(self.upgrade_button)
 
         refresh = QPushButton("Look again")
         refresh.setToolTip("Check the tools folder again, after copying a program in by hand.")
@@ -261,12 +276,17 @@ class ToolsDialog(QDialog):
                 state.setForeground(theme.color("ok" if installed else "textThird"))
             self.table.setItem(row, self.COL_STATUS, state)
 
-            pinned = QTableWidgetItem(spec.version + ("  (unverified)" if unverifiable else ""))
+            shown_version = effective_version(spec)
+            pinned = QTableWidgetItem(
+                shown_version + ("  (unverified)" if unverifiable else ""))
             if unverifiable:
                 pinned.setForeground(theme.color("warn"))
                 pinned.setToolTip(
                     "This project publishes no checksum for its builds, so the download "
                     "cannot be verified. Prefer a copy you already have.")
+            elif shown_version != spec.version:
+                pinned.setToolTip(
+                    f"Installed from Check for updates. This release pins {spec.version}.")
             self.table.setItem(row, self.COL_PINNED, pinned)
 
             self.table.setItem(row, self.COL_LATEST, QTableWidgetItem(""))
@@ -337,6 +357,9 @@ class ToolsDialog(QDialog):
             return
         self.check_button.setEnabled(False)
         self.check_button.setText("Checking...")
+        self.upgrade_button.setVisible(False)
+        self.upgrade_button.setEnabled(False)
+        self._pending_upgrades.clear()
         self._reasons_logged.clear()
         for row in range(self.table.rowCount()):
             self.table.item(row, self.COL_LATEST).setText("...")
@@ -356,7 +379,10 @@ class ToolsDialog(QDialog):
 
         if report.status is Status.BEHIND:
             cell.setForeground(theme.color("warn"))
-            self._say(f"{report.spec.label}: pinned {report.spec.version}, {report.detail}")
+            current = effective_version(report.spec)
+            self._say(f"{report.spec.label}: installed {current}, {report.detail}")
+            if report.latest and not any(f.sha256 is None for f in report.spec.files):
+                self._pending_upgrades.append((report.spec.key, report.latest))
         elif report.status in (Status.UNKNOWN, Status.MANUAL):
             cell.setForeground(theme.color("textThird"))
             # "could not check" on its own reads as a fault in the tool. Say why,
@@ -371,8 +397,41 @@ class ToolsDialog(QDialog):
     def _on_versions_done(self) -> None:
         self.check_button.setEnabled(True)
         self.check_button.setText("Check for updates")
+        count = len(self._pending_upgrades)
+        if count == 0:
+            self.upgrade_button.setVisible(False)
+            self._say("Everything checked is current. Double-click a row to open its release page.")
+            return
+        label = "tool" if count == 1 else "tools"
+        self.upgrade_button.setText(f"Update {count} {label}")
+        self.upgrade_button.setVisible(self.details_box.isChecked())
+        self.upgrade_button.setEnabled(True)
         self._say(
-            "A tool marked as having a newer version is not installed from here: every "
-            "download is verified against a checksum recorded in this release, so an "
-            "updated tool arrives with the next update of the app. Double-click a row "
-            "to open its release page.")
+            f"{count} {label} can be updated. Press Update {count} {label} to download "
+            "them. Each file is hashed and the hash is kept next to the tool.")
+
+    def _upgrade_behind(self) -> None:
+        if not self._pending_upgrades:
+            return
+        if self._upgrade_worker is not None and self._upgrade_worker.isRunning():
+            return
+        updates = list(self._pending_upgrades)
+        self.upgrade_button.setEnabled(False)
+        self.check_button.setEnabled(False)
+        self.download_button.setEnabled(False)
+        self._say("Updating.")
+        self._upgrade_worker = _UpgradeWorker(updates)
+        self._upgrade_worker.log.connect(self._say)
+        self._upgrade_worker.done.connect(self._on_upgraded)
+        self._upgrade_worker.start()
+
+    def _on_upgraded(self, errors: list[str]) -> None:
+        self._pending_upgrades.clear()
+        self.upgrade_button.setVisible(False)
+        self.check_button.setEnabled(True)
+        self.refresh()
+        if not errors:
+            self._say("Done.")
+            return
+        for error in errors:
+            self._say(error)

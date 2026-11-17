@@ -522,3 +522,86 @@ def test_an_archive_with_absurdly_many_members_is_refused(tmp_path, monkeypatch)
 
     with pytest.raises(manager_module.ToolError, match="entries"):
         mgr._extract_zip(archive, tmp_path / "into")
+
+
+# ----------------------------------------------------------- upgrade to a tag
+
+def test_url_for_tag_rewrites_7zip_and_rom_converto_urls():
+    from aynthor.core.tools.versions import rewrite_version_url
+
+    seven = rewrite_version_url(
+        "https://github.com/ip7z/7zip/releases/download/26.03/7z2603-extra.7z",
+        "26.03",
+        "26.06",
+    )
+    assert seven.endswith("/26.06/7z2606-extra.7z")
+
+    rom = rewrite_version_url(
+        "https://github.com/DevYukine/rom-converto/releases/download/v0.21.0/"
+        "rom-converto-cli-windows-x64.exe",
+        "0.21.0",
+        "v0.24.0",
+    )
+    assert "/v0.24.0/" in rom
+
+
+def test_url_for_tag_rewrites_maxcso_urls_with_repeated_version():
+    from aynthor.core.tools.versions import rewrite_version_url
+
+    url = rewrite_version_url(
+        "https://github.com/unknownbrackets/maxcso/releases/download/v1.13.0/"
+        "maxcso_v1.13.0_windows.7z",
+        "1.13.0",
+        "v1.14.0",
+    )
+    assert url.endswith("/v1.14.0/maxcso_v1.14.0_windows.7z")
+
+
+def test_a_local_pin_overrides_the_manifest_checksum(tmp_path, monkeypatch):
+    """Check for updates installs a newer build and remembers its hash locally,
+    so the next open does not call the copy 'Needs update' against the old pin."""
+    from aynthor.core.tools import manager as manager_module
+    from aynthor.core.tools import pins as pins_module
+
+    monkeypatch.setattr(manager_module, "tools_dir", lambda: tmp_path)
+    monkeypatch.setattr(pins_module, "tools_dir", lambda: tmp_path)
+    mgr = manager_module.ToolsManager()
+
+    payload = b"local-newer-ndstrim"
+    (tmp_path / "ndstrim.exe").write_bytes(payload)
+    digest = hashlib.sha256(payload).hexdigest()
+    pins_module.save_pin(
+        "ndstrim",
+        version="9.9.9",
+        url="https://example.invalid/ndstrim.exe",
+        files={"ndstrim.exe": digest},
+    )
+
+    assert mgr.matches_manifest("ndstrim") is True
+    assert mgr.outdated() == []
+    assert pins_module.effective_version(SPECS_BY_KEY["ndstrim"]) == "9.9.9"
+
+
+def test_upgrade_installs_a_newer_tag_and_records_its_hash(tmp_path, monkeypatch):
+    from aynthor.core.tools import manager as manager_module
+    from aynthor.core.tools import pins as pins_module
+
+    monkeypatch.setattr(manager_module, "tools_dir", lambda: tmp_path)
+    monkeypatch.setattr(pins_module, "tools_dir", lambda: tmp_path)
+
+    payload = b"upgraded-rom-converto"
+    digest = hashlib.sha256(payload).hexdigest()
+
+    def fake_download(url, dest):
+        dest.write_bytes(payload)
+        return dest
+
+    monkeypatch.setattr(manager_module.net, "download", fake_download)
+    mgr = manager_module.ToolsManager()
+    mgr.upgrade("rom-converto", "v0.24.0")
+
+    assert (tmp_path / "rom-converto.exe").read_bytes() == payload
+    pin = pins_module.load_pins()["rom-converto"]
+    assert pin["version"] == "v0.24.0"
+    assert pin["files"]["rom-converto.exe"] == digest
+    assert mgr.matches_manifest("rom-converto") is True

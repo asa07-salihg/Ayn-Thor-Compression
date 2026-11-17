@@ -49,15 +49,20 @@ class SevenZipConverter(BaseConverter):
         if is_decompress(job):
             # An archive expands into a folder; `suggest_output_path` already
             # produced an extensionless path for it.
-            out_dir = job.output_path if job.output_path.suffix == "" else job.output_path.parent
+            # The result of Open is a folder, even when the name contains a
+            # dot ("Dr. Mario"). Path.suffix is not empty in that case, and
+            # using the parent dumped the files into the platform folder.
+            out_dir = job.output_path
             out_dir.mkdir(parents=True, exist_ok=True)
             args = ["x", str(job.input_path), f"-o{out_dir}", "-y"]
         else:
             archive_type = opts.get("archive_type", "7z")
             args = ["a", f"-t{archive_type}", f"-mx={opts.get('level', 9)}"]
-            if method := opts.get("method"):
-                args.append(f"-m0={method}")
             if archive_type == "7z":
+                # ZIP does not implement LZMA2. A Settings save used to store
+                # the 7z method on every row, and 7za then refused the zip.
+                if method := opts.get("method"):
+                    args.append(f"-m0={method}")
                 # Solid helps when several ROMs share an archive and costs
                 # nothing when only one does.
                 args.append(f"-ms={'on' if opts.get('solid', True) else 'off'}")

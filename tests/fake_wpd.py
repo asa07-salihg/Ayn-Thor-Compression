@@ -368,6 +368,7 @@ class Device:
             "DEVICE": Node("DEVICE", "", name, wpd.WPD_CONTENT_TYPE_FUNCTIONAL_OBJECT)}
         self._ids = itertools.count(100)
         self.commits = 0
+        self.refuse_delete = False
 
     # -- building the tree
     def storage(self, name: str, capacity: int) -> Node:
@@ -443,6 +444,8 @@ class Device:
             return 0
 
         def delete(_options, ids, _results):
+            if self.refuse_delete:
+                return 1
             for object_id in server.objects[ids].items:
                 if object_id not in self.nodes:
                     return E_NOT_FOUND

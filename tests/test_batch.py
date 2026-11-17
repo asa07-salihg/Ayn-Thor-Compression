@@ -406,6 +406,106 @@ def test_a_cue_sent_as_it_is_takes_its_tracks_and_arrives_last(tmp_path, convert
     assert converter.calls == []
 
 
+def _sheet(folder: Path, cue_name: str, track_name: str, data: bytes) -> Path:
+    file(folder / track_name, data)
+    return file(folder / cue_name, f'FILE "{track_name}" BINARY\n'.encode())
+
+
+def test_two_discs_that_share_a_track_name_do_not_overwrite_each_other(tmp_path, converter):
+    """Both sheets list track01.bin. The second must not replace the first's
+    track, and must not delete its own copy from this PC."""
+    alpha = _sheet(tmp_path / "A", "Alpha.cue", "track01.bin", b"AAAA")
+    beta = _sheet(tmp_path / "B", "Beta.cue", "track01.bin", b"BBBB")
+    device = MemoryFS("AYN Thor")
+    jobs = [
+        job(alpha, tmp_path / "out" / "Alpha.cue", mode=ConversionMode.MOVE,
+            remote="psx/Alpha.cue", delete_source=True),
+        job(beta, tmp_path / "out" / "Beta.cue", mode=ConversionMode.MOVE,
+            remote="psx/Beta.cue", delete_source=True),
+    ]
+    result = run(jobs, device=device)
+    assert device.read(P("psx/track01.bin")) == b"AAAA"
+    assert device.stat(P("psx/Beta.cue")) is None
+    assert [item[1] for item in result.finished] == [Outcome.DONE, Outcome.FAILED]
+    assert (tmp_path / "B" / "track01.bin").read_bytes() == b"BBBB"
+
+
+def test_renaming_a_disc_does_not_replace_the_other_discs_tracks(tmp_path, converter):
+    first = _sheet(tmp_path / "A", "Game.cue", "track01.bin", b"AAAA")
+    second = _sheet(tmp_path / "B", "Game.cue", "track01.bin", b"BBBB-LONGER")
+    device = MemoryFS("AYN Thor")
+    jobs = [
+        job(first, tmp_path / "out" / "a" / "Game.cue", mode=ConversionMode.MOVE,
+            remote="psx/Game.cue"),
+        job(second, tmp_path / "out" / "b" / "Game.cue", mode=ConversionMode.MOVE,
+            remote="psx/Game.cue"),
+    ]
+    result = run(jobs, policy="rename", device=device)
+    assert device.read(P("psx/track01.bin")) == b"AAAA"
+    assert device.stat(P("psx/Game_1.cue")) is None
+    assert result.finished[1][1] is Outcome.FAILED
+
+
+def test_overwrite_still_replaces_that_discs_own_tracks(tmp_path, converter):
+    sheet = _sheet(tmp_path / "new", "Game.cue", "track01.bin", b"NEWTRACK")
+    device = MemoryFS("AYN Thor")
+    device.write(P("psx/Game.cue"), b"old sheet")
+    device.write(P("psx/track01.bin"), b"OLD")
+    result = run([job(sheet, tmp_path / "out" / "Game.cue", mode=ConversionMode.MOVE,
+                      remote="psx/Game.cue")],
+                 policy="overwrite", device=device)
+    assert result.finished[0][1] is Outcome.DONE
+    assert device.read(P("psx/track01.bin")) == b"NEWTRACK"
+
+
+def test_overwrite_does_not_replace_a_file_sent_earlier_in_the_same_run(tmp_path, converter):
+    device = MemoryFS("AYN Thor")
+    one = file(tmp_path / "a" / "Game.chd", b"FIRST")
+    two = file(tmp_path / "b" / "game.chd", b"SECOND")
+    result = run([
+        job(one, tmp_path / "stage" / "Game.chd", mode=ConversionMode.MOVE, remote="psx/Game.chd"),
+        job(two, tmp_path / "stage" / "game.chd", mode=ConversionMode.MOVE, remote="psx/game.chd"),
+    ], policy="overwrite", device=device)
+    assert [item[1] for item in result.finished] == [Outcome.DONE, Outcome.DONE]
+    assert device.read(P("psx/Game.chd")) == b"FIRST"
+    assert device.read(P("psx/game_1.chd")) == b"SECOND"
+
+
+def test_stop_during_conversion_does_not_delete_the_copy_on_the_device(tmp_path, converter):
+    device = MemoryFS("AYN Thor")
+    device.write(P("psx/Spyro.chd"), b"keep-me")
+    single = staged_job(tmp_path)
+    recorder = Recorder()
+
+    @contextmanager
+    def opener():
+        yield device
+
+    runner = Batch([(1, single)], policy="overwrite", events=recorder.events(),
+                   open_device=opener)
+    original = converter.convert
+
+    def convert_then_cancel(one):
+        result = original(one)
+        runner.cancel()
+        return result
+
+    converter.convert = convert_then_cancel
+    runner.run()
+    assert device.read(P("psx/Spyro.chd")) == b"keep-me"
+    assert recorder.finished[0][1] is Outcome.FAILED
+    assert "Stopped" in recorder.finished[0][2]
+
+
+def test_decrypting_a_cia_runs_the_decryptor_instead_of_copying(tmp_path, converter):
+    source = file(tmp_path / "Game.cia", b"encrypted")
+    out = tmp_path / "Game-decrypted.cia"
+    result = run([job(source, out, fmt=CompressionFormat.DEC_3DS)])
+    assert converter.calls == [source]
+    assert out.read_bytes().startswith(b"out:")
+    assert result.finished[0][1] is Outcome.DONE
+
+
 def test_a_cue_with_a_missing_track_is_not_sent(tmp_path, converter):
     device = MemoryFS("AYN Thor")
     sheet = _cue(tmp_path / "Downloads")

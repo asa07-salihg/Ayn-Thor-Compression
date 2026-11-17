@@ -1,19 +1,8 @@
-"""Ask each converter's project whether the pinned version is still current.
+"""Ask each converter's project whether the installed version is still current.
 
-Every tool is pinned to an exact version with a checksum, which is what
-makes the downloads verifiable. The cost is drift: nothing tells you when a
-project has moved on, and a tool that is two years behind is a tool that is
-missing two years of format fixes.
-
-So the app can ask. What it will not do is install what it finds, and that
-restraint is the whole point rather than an omission: the guarantee this
-app makes is that nothing reaches `tools/` unless it matches a checksum
-recorded in `manifest`. Downloading a version that is by definition not in
-the manifest would mean running an executable nobody checked. Bumping a pin
-is a change to this repository, made by a person who read the upstream
-changelog for flag changes, and it ships in the next release.
-
-So this reports, and points at the release page.
+Every tool ships with a checksum in `manifest`. The Tools window can also
+install a newer upstream build and remember its hash in `pins.json`. This
+module compares tags against that effective version.
 
 https://docs.github.com/en/rest/repos/repos#list-repository-tags
 Unauthenticated requests are rate limited to 60 an hour per address, and
@@ -87,6 +76,50 @@ def newer_tags(tags: Iterable[str], pinned: str) -> list[str]:
     return sorted({tag for tag in tags if as_numbers(tag) > current}, key=as_numbers)
 
 
+def rewrite_version_url(url: str, pinned_version: str, tag: str) -> str:
+    """The download URL for `tag`, built by rewriting the pinned URL.
+
+    Upstream tags and path shapes differ (`26.03` vs `7z2603`, `v0.21.0` vs
+    `0.21.0`), so every spelling of the old and new version is tried, longest
+    first, until the URL changes.
+    """
+    if not url:
+        raise ValueError("No download URL to rewrite.")
+    old_bare = pinned_version.lstrip("vV")
+    new_bare = tag.lstrip("vV")
+    pairs = [
+        (pinned_version, tag),
+        (old_bare, new_bare),
+        (f"v{old_bare}", f"v{new_bare}"),
+        (f"V{old_bare}", f"V{new_bare}"),
+        (old_bare.replace(".", ""), new_bare.replace(".", "")),
+    ]
+    seen: set[tuple[str, str]] = set()
+    ordered: list[tuple[str, str]] = []
+    for old, new in pairs:
+        if not old or old == new or (old, new) in seen:
+            continue
+        seen.add((old, new))
+        ordered.append((old, new))
+    ordered.sort(key=lambda pair: len(pair[0]), reverse=True)
+
+    out = url
+    for old, new in ordered:
+        if old in out:
+            out = out.replace(old, new)
+    if out == url:
+        raise ValueError(
+            f"Could not put {tag!r} into the download URL for pinned {pinned_version!r}."
+        )
+    return out
+
+
+def url_for_tag(spec: ToolSpec, tag: str) -> str:
+    if not spec.url:
+        raise ValueError(f"{spec.label} has no download URL.")
+    return rewrite_version_url(spec.url, spec.version, tag)
+
+
 def fetch_tags(repo: str, timeout: int = net.DEFAULT_TIMEOUT) -> list[str]:
     payload = net.fetch_json(
         f"https://api.github.com/repos/{repo}/tags?per_page={_TAGS_PER_PAGE}",
@@ -122,12 +155,16 @@ def check_one(spec: ToolSpec, timeout: int = net.DEFAULT_TIMEOUT) -> VersionRepo
         return VersionReport(spec, Status.MANUAL,
                              detail=f"not published through GitHub; see {spec.homepage}")
 
+    from aynthor.core.tools.pins import effective_version
+
+    current = effective_version(spec)
+
     try:
         tags = fetch_tags(repo, timeout)
     except net.NetworkError as exc:
         return VersionReport(spec, Status.UNKNOWN, detail=_explain(exc))
 
-    newer = newer_tags(tags, spec.version)
+    newer = newer_tags(tags, current)
     if not newer:
         return VersionReport(spec, Status.CURRENT)
     return VersionReport(spec, Status.BEHIND, latest=newer[-1],

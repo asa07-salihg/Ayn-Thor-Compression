@@ -171,6 +171,9 @@ def download(
                     if percent != last_percent:
                         last_percent = percent
                         on_progress(percent)
+            if declared and written != declared:
+                raise NetworkError(
+                    f"{url} stopped early ({written} of {declared} bytes).")
     except NetworkError:
         destination.unlink(missing_ok=True)
         raise

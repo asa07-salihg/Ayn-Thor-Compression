@@ -90,6 +90,11 @@ class ChdmanConverter(BaseConverter):
             # a DVD image comes back as one .iso, a CD as a cue/bin pair.
             command = "extractdvd" if job.output_path.suffix.lower() == ".iso" else "extractcd"
 
+        if command == "extractdvd" and job.output_path.suffix.lower() != ".iso":
+            corrected = job.output_path.with_suffix(".iso")
+            if corrected.exists() and not job.options.get("force"):
+                return False, f"{corrected.name} is already there."
+            job.output_path = corrected
         args = [command, "-i", str(job.input_path), "-o", str(job.output_path)]
         if job.options.get("force"):
             args.append("-f")

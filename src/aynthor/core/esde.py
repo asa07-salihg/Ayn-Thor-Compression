@@ -128,6 +128,18 @@ COMPRESSIBLE_PLATFORMS: frozenset[str] = frozenset({
 })
 
 
+def usable_pc_folder(text: str) -> str:
+    """A folder on this PC.
+
+    An older build saved a shell id (`::{...}`) for a handheld folder. That
+    string is not a path, and using it makes the bar show the raw id and
+    makes Add files fail. Callers treat an empty result as "no folder".
+    """
+    if not text or text.startswith("::"):
+        return ""
+    return text
+
+
 def resolve_roms_root(selected: Path) -> Path:
     """Return the correct root when an SD card root or ROMs folder is selected."""
     selected = selected.resolve()

@@ -37,10 +37,42 @@ jobs:
         shell: pwsh
         run: Get-Content dist/SHA256SUMS.txt
 
+      # Body = the matching ## section in CHANGELOG.md (v1.6.0 -> ## 1.6.0).
+      - name: Write release notes from CHANGELOG
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: pwsh
+        run: |
+          $tag = $env:GITHUB_REF_NAME
+          $ver = $tag.TrimStart('v')
+          $lines = Get-Content CHANGELOG.md
+          $out = [System.Collections.Generic.List[string]]::new()
+          $capture = $false
+          foreach ($line in $lines) {
+            if ($line -match "^##\s+$([regex]::Escape($ver))\b") {
+              $capture = $true
+              continue
+            }
+            if ($capture -and $line -match '^##\s+') { break }
+            if ($capture) { [void]$out.Add($line) }
+          }
+          if ($out.Count -eq 0) {
+            throw "No CHANGELOG.md section for version $ver (tag $tag)"
+          }
+          $body = @(
+            "## $ver"
+            ""
+          ) + $out.ToArray() + @(
+            ""
+            "[Full changelog](https://github.com/asa07-salihg/Ayn-Thor-Compression/blob/main/CHANGELOG.md)"
+          )
+          Set-Content -Path release-notes.md -Value ($body -join "`n") -Encoding utf8
+          Get-Content release-notes.md
+
       - uses: softprops/action-gh-release@v3
         if: startsWith(github.ref, 'refs/tags/')
         with:
           files: |
             dist/AynThorCompression.exe
             dist/SHA256SUMS.txt
-          generate_release_notes: true
+          body_path: release-notes.md
+          generate_release_notes: false

@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from pathlib import Path, PurePosixPath
 
-from aynthor.core.formats import natural_mode, suggest_output_path
+from aynthor.core.formats import format_info, natural_mode, suggest_output_path
 from aynthor.core.models import CompressionFormat, ConversionMode, QueueItem
 from aynthor.core.output import (
     member_name,
@@ -105,6 +105,10 @@ def _grouped_archive_items(
     `snes/SNES Favourites.7z/SNES Favourites.7z`, where the last one written
     was the only one left.
     """
+    # One ROM keeps its own name. Naming it after the zip turned
+    # SLUS-21782.zip into a folder called SLUS-21782.
+    if len(items) <= 1:
+        return items
     if len({_title_key(item) for item in items if not item.game_group}) > 1:
         return items
     group = safe_folder_name(strip_disc_tag(archive.name)) or safe_folder_name(archive.stem)
@@ -165,6 +169,14 @@ def _one(
     platform = detected.platform or ""
     mode = row_mode(source, fmt, options, settings, member)
     output = output_for(path, fmt, mode, settings, options, platform, member)
+    # A zip the app cannot see a ROM inside of must not be wrapped in a 7z.
+    # The playable file would be nested, and delete-source would remove it.
+    # Only when the archive was actually read and still queued as a whole
+    # file. An unreadable zip stays a 7z: we cannot tell what is inside.
+    if (not member and is_archive(path) and fmt is CompressionFormat.SEVEN_ZIP
+            and output.suffix.lower() != path.suffix.lower()
+            and list_members(path) is not None):
+        return None, f"{shown}: left as it is. Nothing inside is a ROM this app converts."
 
     if (not member and is_archive(path) and fmt is not CompressionFormat.SEVEN_ZIP):
         # Peek found nothing to convert. chdman cannot read a zip; skip rather
@@ -223,8 +235,13 @@ def _should_place(
     """The file is already the container this platform wants, and something
     other than converting it is asked for: a game folder, a card, a device,
     or getting it out of an archive."""
-    if fmt is CompressionFormat.NDS_TRIM:
+    if fmt in (CompressionFormat.NDS_TRIM, CompressionFormat.DEC_3DS):
         return False
+    info = format_info(fmt)
+    # .zcci, .xcz, .zso and .dax are already the compressed form. A card
+    # should receive them as they are, not expanded back to full size.
+    if info is not None and source.suffix.lower() in info.reverse_on:
+        return bool(settings.game_folders or member or settings.has_destination)
     suggested = suggest_output_path(source, fmt, ConversionMode.COMPRESS, options)
     if suggested.suffix.lower() != source.suffix.lower():
         return False

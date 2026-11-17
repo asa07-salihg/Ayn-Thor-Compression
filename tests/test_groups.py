@@ -74,6 +74,16 @@ def test_a_file_already_in_a_game_folder_groups_there(tmp_path: Path):
     assert group_folder_name(item, FormatSettings()) == "Chrono Cross.chd"
 
 
+def test_a_named_group_stays_flat_until_game_folders_are_on():
+    item = QueueItem(
+        path=Path("Bayonetta 2.nsp"), format=CompressionFormat.NSZ,
+        mode=ConversionMode.COMPRESS, output=Path("Bayonetta 2.nsz"),
+        game_group="Bayonetta 2",
+    )
+    assert group_folder_name(item, FormatSettings()) == ""
+    assert group_folder_name(item, FormatSettings(game_folders=True)) == "Bayonetta 2.nsz"
+
+
 def test_unassign_clears_the_forced_folder(tmp_path: Path):
     source = tmp_path / "game.cue"
     item = QueueItem(

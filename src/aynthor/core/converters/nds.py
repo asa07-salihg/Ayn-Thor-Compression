@@ -34,7 +34,12 @@ class NdsTrimConverter(BaseConverter):
             return False, missing_tool("ndstrim", ndstrim.parent)
 
         target = job.output_path
-        if target.resolve() != job.input_path.resolve():
+        copied = False
+        try:
+            copied = target.resolve() != job.input_path.resolve()
+        except OSError:
+            copied = target != job.input_path
+        if copied:
             # ndstrim only edits in place, so trimming to a different location
             # means copying there first and trimming the copy.
             target.parent.mkdir(parents=True, exist_ok=True)
@@ -49,4 +54,11 @@ class NdsTrimConverter(BaseConverter):
                 return False, f"Could not copy the cart before trimming: {exc}"
 
         result = run_tool(ndstrim, ["-i", str(target)], on_output=self.emit)
-        return (True, "NDS trimmed.") if result.returncode == 0 else failure(result)
+        if result.returncode != 0:
+            # The untrimmed copy must not stay, or the next run says it is
+            # already there and the cart is never trimmed.
+            if copied:
+                with suppress(OSError):
+                    target.unlink(missing_ok=True)
+            return failure(result)
+        return True, "NDS trimmed."

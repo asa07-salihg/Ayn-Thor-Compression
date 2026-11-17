@@ -173,7 +173,7 @@ def _platform_label(platform: str) -> str:
 
 class _BecomesDelegate(QStyledItemDelegate):
     """Draws the Becomes cell as something you can click. With `chip` on, the
-    format is a tag, so a column of CHD, RVZ and NSZ reads at a glance."""
+    format is a coloured tag instead of plain text."""
 
     CHEVRON_WIDTH = 16
 
@@ -505,6 +505,9 @@ class QueueTable(QTreeWidget):
         self._next_id = 1
         self._drop_hover: QTreeWidgetItem | None = None
         self._by_id: dict[int, QTreeWidgetItem] = {}
+        self._folders_by_key: dict[str, QTreeWidgetItem] = {}
+        self._folders_by_name: dict[str, QTreeWidgetItem] = {}
+        self._locked = False
         self._join_decisions: dict[str, bool] = {}
 
     # ---------------------------------------------------------------- filling
@@ -791,6 +794,10 @@ class QueueTable(QTreeWidget):
             sort = node.data(self.COL_SIZE, _ROLE_SORT)
             if isinstance(sort, (int, float)) and sort > 0:
                 self._total_bytes += int(sort)
+        self._folders_by_key.clear()
+        self._folders_by_name.clear()
+        for folder in self._all_folders():
+            self._remember_folder(folder)
 
     def _reveal_part_column(self) -> None:
         has_parts = any(node.text(self.COL_TYPE) for node in self.files())
@@ -821,18 +828,28 @@ class QueueTable(QTreeWidget):
                     stack.append(node.child(i))
         return found
 
+    def set_locked(self, locked: bool) -> None:
+        """While a batch is running the queue is a picture of that run."""
+        self._locked = locked
+
+    def _remember_folder(self, node: QTreeWidgetItem) -> None:
+        key = str(node.data(self.COL_FILE, _ROLE_FOLDER_KEY) or node.text(self.COL_FILE))
+        self._folders_by_key[key] = node
+        self._folders_by_name.setdefault(node.text(self.COL_FILE).lower(), node)
+
+    def _forget_folder(self, node: QTreeWidgetItem) -> None:
+        key = str(node.data(self.COL_FILE, _ROLE_FOLDER_KEY) or node.text(self.COL_FILE))
+        if self._folders_by_key.get(key) is node:
+            del self._folders_by_key[key]
+        name = node.text(self.COL_FILE).lower()
+        if self._folders_by_name.get(name) is node:
+            del self._folders_by_name[name]
+
     def _folder_by_key(self, key: str) -> QTreeWidgetItem | None:
-        for node in self._all_folders():
-            if node.data(self.COL_FILE, _ROLE_FOLDER_KEY) == key:
-                return node
-        return None
+        return self._folders_by_key.get(key)
 
     def _folder_named(self, name: str) -> QTreeWidgetItem | None:
-        lowered = name.lower()
-        for node in self._all_folders():
-            if node.text(self.COL_FILE).lower() == lowered:
-                return node
-        return None
+        return self._folders_by_name.get(name.lower())
 
     def _game_folder_for_family(self, family: str) -> QTreeWidgetItem | None:
         """The game tree that already holds this Switch title id, if any."""
@@ -851,7 +868,7 @@ class QueueTable(QTreeWidget):
         return None
 
     def _game_folder_for_name_prefix(
-        self, game_group: str, platform: str = "",
+        self, game_group: str, platform: str = "", content_type: str = "",
     ) -> tuple[QTreeWidgetItem | None, str]:
         """Join the tree whose base title is this name's header.
 
@@ -862,6 +879,7 @@ class QueueTable(QTreeWidget):
         needle = game_group.strip()
         if not needle:
             return None, ""
+        incoming_base = content_type.strip().casefold() == "base"
         best: QTreeWidgetItem | None = None
         best_header = ""
         best_len = 10**9
@@ -871,18 +889,27 @@ class QueueTable(QTreeWidget):
             folder_platform = folder.data(self.COL_FILE, _ROLE_PLATFORM) or ""
             if platform and folder_platform and folder_platform != platform:
                 continue
-            headers = [Path(folder.text(self.COL_FILE)).stem]
+            base_headers: list[str] = []
+            other_headers = [Path(folder.text(self.COL_FILE)).stem]
             for i in range(folder.childCount()):
                 child = folder.child(i)
                 if not self._is_file(child):
                     continue
                 part = (child.text(self.COL_TYPE) or "").strip().casefold()
-                if part == "base":
-                    group = child.text(self.COL_GAME).strip()
-                    if group:
-                        headers.append(group)
-            for header in headers:
-                if not header or not titles_share_game(needle, header):
+                group = child.text(self.COL_GAME).strip()
+                if part == "base" and group:
+                    base_headers.append(group)
+            # Two base games that share a prefix are different games.
+            # Bayonetta does not own Bayonetta 2. An update still joins the
+            # base, and a base still joins the folder its update already made.
+            if incoming_base and base_headers:
+                headers = [(name, needle.casefold() == name.casefold())
+                           for name in base_headers]
+            else:
+                headers = [(name, titles_share_game(needle, name))
+                           for name in other_headers + base_headers]
+            for header, shares in headers:
+                if not header or not shares:
                     continue
                 short = canonical_title(needle, header) or header
                 if len(short) < best_len:
@@ -944,6 +971,7 @@ class QueueTable(QTreeWidget):
         if existing is not None:
             if platform and not existing.data(self.COL_FILE, _ROLE_PLATFORM):
                 existing.setData(self.COL_FILE, _ROLE_PLATFORM, platform)
+            self._remember_folder(existing)
             return existing
         node = QTreeWidgetItem()
         node.setText(self.COL_FILE, name)
@@ -951,6 +979,7 @@ class QueueTable(QTreeWidget):
         node.setData(self.COL_FILE, _ROLE_FOLDER_KIND, kind)
         node.setData(self.COL_FILE, _ROLE_FOLDER_KEY, key)
         node.setData(self.COL_FILE, _ROLE_PLATFORM, platform)
+        self._remember_folder(node)
         flags = (
             Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable
             | Qt.ItemFlag.ItemIsDropEnabled)
@@ -1003,7 +1032,7 @@ class QueueTable(QTreeWidget):
             group = matched.text(self.COL_FILE)
         elif item.game_group:
             matched, shared = self._game_folder_for_name_prefix(
-                item.game_group, item.platform)
+                item.game_group, item.platform, item.content_type)
             if matched is not None:
                 group = matched.text(self.COL_FILE)
                 if shared:
@@ -1011,6 +1040,7 @@ class QueueTable(QTreeWidget):
                     wanted = f"{shared}{suffix}"
                     if wanted.casefold() != group.casefold():
                         old_key = matched.data(self.COL_FILE, _ROLE_FOLDER_KEY) or ""
+                        self._forget_folder(matched)
                         matched.setText(self.COL_FILE, wanted)
                         if old_key:
                             parent_key, sep, _ = old_key.rpartition("/")
@@ -1018,6 +1048,7 @@ class QueueTable(QTreeWidget):
                                 self.COL_FILE, _ROLE_FOLDER_KEY,
                                 f"{parent_key}/{wanted}" if sep else wanted,
                             )
+                        self._remember_folder(matched)
                         group = wanted
         platform_node = self._platform_node_for(item)
         if group:
@@ -1189,6 +1220,7 @@ class QueueTable(QTreeWidget):
         if len(found) != 1:
             return
         platform = next(iter(found))
+        folder.setData(self.COL_FILE, _ROLE_PLATFORM, platform)
         folder.setData(self.COL_PLATFORM, _ROLE_PLATFORM, platform)
         folder.setText(self.COL_PLATFORM, _platform_label(platform))
 
@@ -1199,6 +1231,8 @@ class QueueTable(QTreeWidget):
         labels: list[str] = []
         for i in range(folder.childCount()):
             child = folder.child(i)
+            if self._is_on_disk(child):
+                continue
             if self._is_file(child):
                 text = child.text(self.COL_BECOMES).strip()
                 if text:
@@ -1309,6 +1343,10 @@ class QueueTable(QTreeWidget):
     def row_item(self, row: int) -> QueueItem:
         return self._read(self.files()[row])
 
+    def row_status(self, item_id: int) -> str:
+        node = self._by_id.get(item_id)
+        return node.text(self.COL_STATUS) if node is not None else ""
+
     def queue_items(self) -> list[tuple[int, QueueItem]]:
         items = []
         for node in self.files():
@@ -1369,6 +1407,11 @@ class QueueTable(QTreeWidget):
             "The app couldn't tell which console this is for, so it would be "
             "saved next to the original. Click to choose one.")
 
+        if options.get("on_disk"):
+            node.setText(self.COL_BECOMES, "")
+            node.setData(self.COL_BECOMES, _ROLE_PATH, output)
+            node.setForeground(self.COL_BECOMES, QBrush(theme.color("textThird")))
+            return
         info = format_info(fmt) if fmt else None
         archive = source_is_archive(path, member)
         intent = str(options.get("intent", ""))
@@ -1434,11 +1477,42 @@ class QueueTable(QTreeWidget):
     def apply_settings(self, settings: FormatSettings) -> None:
         self._settings = settings
         forget_roms_root()
+        if not settings.game_folders:
+            self._lift_automatic_groups()
         for node in self.files():
             if not node.data(self.COL_BECOMES, _ROLE_PICKED) and not self._is_on_disk(node):
                 self._follow_destination(node)
             self._refresh_item(node)
         self.apply_empty_folder_setting()
+
+    def _lift_automatic_groups(self) -> None:
+        """Take rows out of game folders the setting no longer asks for.
+
+        A folder that exists because the file already sits in one on disk
+        stays. So does a row anchored to a card folder.
+        """
+        for node in list(self.files()):
+            if self._is_on_disk(node):
+                continue
+            options = dict(node.data(self.COL_FILE, _ROLE_OPTIONS) or {})
+            if options.get("disk_anchor"):
+                continue
+            parent = node.parent()
+            if not self._is_game_node(parent):
+                continue
+            options.pop("game_folder", None)
+            node.setData(self.COL_FILE, _ROLE_OPTIONS, options)
+            above = parent.parent() if parent is not None else None
+            home = above if self._is_folder(above) and not self._is_game_node(above) else None
+            self._reparent(node, home)
+            self._follow_destination(node)
+            item = self._read(node)
+            if item.format is not None:
+                item.output = output_for(
+                    item.path, item.format, item.mode, self._settings,
+                    item.tool_options, item.platform, item.member)
+                self._write(node, item)
+            self._refresh_item(node)
 
     def _follow_destination(self, node: QTreeWidgetItem) -> None:
         """Give the row the direction it would have had if it were added now.
@@ -1627,6 +1701,12 @@ class QueueTable(QTreeWidget):
             return
         saved = input_size - output_size
         percent = saved * 100 / input_size
+        if saved == 0:
+            node.setText(self.COL_SAVED, "0%")
+            node.setData(self.COL_SAVED, _ROLE_SORT, 0)
+            node.setToolTip(self.COL_SAVED, "same size")
+            node.setForeground(self.COL_SAVED, QBrush(theme.color("text")))
+            return
         node.setText(self.COL_SAVED, f"{percent:.0f}%" if saved > 0 else f"+{-percent:.0f}%")
         node.setData(self.COL_SAVED, _ROLE_SORT, percent)
         node.setToolTip(
@@ -1655,6 +1735,8 @@ class QueueTable(QTreeWidget):
         return [i for i, node in enumerate(files) if node in chosen]
 
     def remove_selected(self) -> None:
+        if self._locked:
+            return
         selected = list(self.selectedItems())
         if not selected:
             return
@@ -1693,6 +1775,7 @@ class QueueTable(QTreeWidget):
                 self._collect_ids(child, into)
 
     def _remove_folder(self, folder: QTreeWidgetItem) -> None:
+        self._forget_folder(folder)
         for i in range(folder.childCount() - 1, -1, -1):
             child = folder.child(i)
             if self._is_folder(child):
@@ -1720,6 +1803,8 @@ class QueueTable(QTreeWidget):
         self.clear()
         self._queued.clear()
         self._by_id.clear()
+        self._folders_by_key.clear()
+        self._folders_by_name.clear()
         self._total_bytes = 0
         self._next_id = 1
         self._drop_hover = None
@@ -1780,6 +1865,9 @@ class QueueTable(QTreeWidget):
                 folder.setBackground(column, QBrush(tint))
 
     def dropEvent(self, event) -> None:
+        if self._locked:
+            event.ignore()
+            return
         if self._from_outside(event):
             self._hover_drop(None)
             target = self._drop_folder(self.itemAt(event.position().toPoint()))
@@ -1799,6 +1887,7 @@ class QueueTable(QTreeWidget):
                 if source is folder:
                     continue
                 self.merge_game_folders(source, folder)
+            event.setDropAction(Qt.DropAction.IgnoreAction)
             event.accept()
             self.apply_empty_folder_setting()
             self.queue_changed.emit()
@@ -1816,6 +1905,7 @@ class QueueTable(QTreeWidget):
                 if actual is not None and actual is not folder:
                     self._align_folder(actual)
         self._reveal_part_column()
+        event.setDropAction(Qt.DropAction.IgnoreAction)
         event.accept()
         self.apply_empty_folder_setting()
         self.queue_changed.emit()
@@ -1883,7 +1973,7 @@ class QueueTable(QTreeWidget):
 
     def rename_game_folder(self, folder: QTreeWidgetItem, new_stem: str) -> bool:
         """Rename the queue game node and, when anchored, the folder on disk."""
-        if not self._is_game_node(folder):
+        if self._locked or not self._is_game_node(folder):
             return False
         stem = safe_folder_name(new_stem) or new_stem.strip()
         if not stem:
@@ -1910,6 +2000,7 @@ class QueueTable(QTreeWidget):
                     folder.setData(self.COL_FILE, _ROLE_DISK_ANCHOR, str(renamed))
                 anchor = folder.data(self.COL_FILE, _ROLE_DISK_ANCHOR) or ""
         old_key = folder.data(self.COL_FILE, _ROLE_FOLDER_KEY) or ""
+        self._forget_folder(folder)
         folder.setText(self.COL_FILE, new_name)
         if old_key:
             parent_key, sep, _ = old_key.rpartition("/")
@@ -1917,6 +2008,7 @@ class QueueTable(QTreeWidget):
                 self.COL_FILE, _ROLE_FOLDER_KEY,
                 f"{parent_key}/{new_name}" if sep else new_name,
             )
+        self._remember_folder(folder)
         for i in range(folder.childCount()):
             child = folder.child(i)
             if not self._is_file(child):
@@ -1983,6 +2075,10 @@ class QueueTable(QTreeWidget):
     def _sync_node(self, node: QTreeWidgetItem) -> None:
         item = self._read(node)
         parent = node.parent()
+        previous = item.platform
+        heading = ""
+        if self._is_folder(parent) and not self._is_game_node(parent):
+            heading = parent.data(self.COL_FILE, _ROLE_PLATFORM) or ""
         if self._is_game_node(parent):
             platform = parent.data(self.COL_FILE, _ROLE_PLATFORM) or item.platform
             assign_to_folder(item, parent.text(self.COL_FILE), self._settings,
@@ -2016,8 +2112,30 @@ class QueueTable(QTreeWidget):
             unassign(item, self._settings)
         self._write(node, item)
         self._refresh_item(node)
+        # Dropping onto a console heading changes the platform. The format
+        # has to follow, the same way the Platform menu does.
+        if (self._is_folder(parent) and not self._is_game_node(parent)
+                and heading and heading != previous):
+            try:
+                row = self.files().index(node)
+            except ValueError:
+                return
+            self.set_platform([row], heading)
 
     # ---------------------------------------------------------- context menu
+
+    def _files_selected_for_removal(self) -> int:
+        """Files that Remove would delete, including those under a heading."""
+        seen: set[int] = set()
+        for node in self.selectedItems():
+            if self._is_file(node):
+                seen.add(id(node))
+            elif self._is_folder(node):
+                for index in range(node.childCount()):
+                    child = node.child(index)
+                    if self._is_file(child):
+                        seen.add(id(child))
+        return len(seen)
 
     def _target_rows(self, row: int) -> list[int]:
         rows = self.selected_rows()
@@ -2229,6 +2347,8 @@ class QueueTable(QTreeWidget):
         return bool(offered) or True
 
     def _on_item_clicked(self, node: QTreeWidgetItem, column: int) -> None:
+        if self._locked and column != self.COL_STATUS:
+            return
         if column == self.COL_STATUS and self._is_failed(node):
             self.failure_clicked.emit(node.data(self.COL_FILE, _ROLE_ID))
             return
@@ -2275,6 +2395,8 @@ class QueueTable(QTreeWidget):
         super().mouseMoveEvent(event)
 
     def _show_menu(self, position: QPoint) -> None:
+        if self._locked:
+            return
         node = self.itemAt(position)
         if node is None:
             menu = QMenu(self)
@@ -2344,8 +2466,9 @@ class QueueTable(QTreeWidget):
                 lambda _c, f=current: self.settings_requested.emit(f))
             menu.addAction(settings_action)
 
+        removing = self._files_selected_for_removal()
         remove = QAction(
-            f"Remove {len(rows)} from queue" if len(rows) > 1 else "Remove from queue", self)
+            f"Remove {removing} from queue" if removing > 1 else "Remove from queue", self)
         remove.triggered.connect(self.remove_selected)
         menu.addAction(remove)
 

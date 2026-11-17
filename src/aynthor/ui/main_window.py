@@ -49,7 +49,7 @@ from PySide6.QtWidgets import (
 from aynthor import CHANGELOG_URL, __version__
 from aynthor.core.batch import Outcome
 from aynthor.core.device import com_thread, open_target
-from aynthor.core.esde import audit_folders, resolve_roms_root
+from aynthor.core.esde import audit_folders, resolve_roms_root, usable_pc_folder
 from aynthor.core.explain import Fix, explain_failure
 from aynthor.core.formats import file_dialog_filter, format_info, known_extensions
 from aynthor.core.groups import discover_folders
@@ -643,7 +643,10 @@ class MainWindow(QMainWindow):
         if self.queue.rowCount() == 0 or not self.start_button.isEnabled():
             return
 
-        queue = self.queue.queue_items()
+        queue = [
+            (row, item) for row, item in self.queue.queue_items()
+            if self.queue.row_status(row) != STATUS_DONE
+        ]
         skipped = self._preflight(queue)
         if skipped is None:
             return
@@ -683,6 +686,7 @@ class MainWindow(QMainWindow):
         self._runner.job_stage.connect(self._on_job_stage)
         self._runner.job_finished.connect(self._on_job_finished)
         self._runner.finished.connect(self._on_all_finished)
+        self.queue.set_locked(True)
         self._runner.start()
         self._refresh_summary()
 
@@ -788,6 +792,7 @@ class MainWindow(QMainWindow):
         self.progress.setValue(int((self._done * 100 + self._current_percent) / self._total))
 
     def _on_all_finished(self) -> None:
+        self.queue.set_locked(False)
         self.progress.hide()
         self.cancel_button.hide()
         self.cancel_button.setEnabled(True)
@@ -828,8 +833,9 @@ class MainWindow(QMainWindow):
         device, which has no folder Windows can open by path."""
         if self.settings.device is not None:
             return None
-        if self.settings.esde_root:
-            return resolve_roms_root(Path(self.settings.esde_root))
+        folder = usable_pc_folder(self.settings.esde_root)
+        if folder:
+            return resolve_roms_root(Path(folder))
         if self.settings.output_dir:
             return Path(self.settings.output_dir)
         if self._last_output is not None:

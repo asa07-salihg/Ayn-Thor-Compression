@@ -265,7 +265,7 @@ def suggest_output_path(
         # Keep the source name; output_for still places it in the game folder.
         return input_path
     if mode == ConversionMode.DECOMPRESS:
-        return _decompressed_path(input_path, target)
+        return _decompressed_path(input_path, target, options)
 
     options = options or {}
     ext = input_path.suffix.lower()
@@ -289,11 +289,15 @@ def suggest_output_path(
     return input_path.with_suffix(_COMPRESS_SUFFIX.get(target, ".out"))
 
 
-def _decompressed_path(input_path: Path, target: CompressionFormat) -> Path:
+def _decompressed_path(input_path: Path, target: CompressionFormat,
+                       options: dict | None = None) -> Path:
     ext = input_path.suffix.lower()
+    options = options or {}
     if target == CompressionFormat.CHD:
-        # chdman writes a cue/bin pair for CD images and a flat .iso for DVDs;
-        # the converter corrects this once it knows which extract command ran.
+        # A DVD CHD (PS2, PSP) comes back as one ISO. Naming it .cue makes
+        # chdman write the ISO bytes into a file no emulator will open.
+        if options.get("chd_type") == "createdvd":
+            return input_path.with_suffix(".iso")
         return input_path.with_suffix(".cue")
     if target in (CompressionFormat.RVZ, CompressionFormat.CSO):
         return input_path.with_suffix(".iso")

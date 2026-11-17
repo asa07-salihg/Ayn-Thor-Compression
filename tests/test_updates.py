@@ -221,7 +221,7 @@ def test_the_checksum_file_names_the_asset_without_a_directory(tmp_path: Path):
 
 # ------------------------------------- the swap script is a batch file
 
-@pytest.mark.parametrize("bad", ["%", '"', "\r", "\n"])
+@pytest.mark.parametrize("bad", ['"', "\r", "\n"])
 def test_a_path_batch_cannot_carry_is_refused(bad, tmp_path, monkeypatch):
     """`%` is legal in a Windows folder name and is variable expansion to cmd,
     so an install under `C:\\%Games%\\` set TARGET to something else entirely

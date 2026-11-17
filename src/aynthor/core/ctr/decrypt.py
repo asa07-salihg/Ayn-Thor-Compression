@@ -144,6 +144,10 @@ def _dump_ncch(rom: Path, work: Path, emit: Emit) -> list[Path]:
     _clean_ncch(work)
     emit(f"Decrypting partitions: {rom.name}")
     result = run_tool(work / "decrypt.exe", [str(rom)], cwd=work)
+    if result.returncode != 0:
+        detail = (result.stderr or result.stdout or "").strip().splitlines()
+        reason = f" ({detail[-1]})" if detail else ""
+        raise DecryptError(f"decrypt.exe failed.{reason}")
     ncch = sorted(work.glob("*.ncch"))
     if not ncch:
         detail = (result.stderr or result.stdout or "").strip().splitlines()
@@ -175,8 +179,10 @@ def decrypt_cart(rom: Path, output: Path, emit: Emit) -> Path:
                 continue
             args += ["-i", f"{part.name}:{index}:{index}"]
         emit("Rebuilding CCI...")
-        run_tool(work / "makerom.exe", args, cwd=work)
-        if not output.is_file():
+        output.unlink(missing_ok=True)
+        result = run_tool(work / "makerom.exe", args, cwd=work)
+        if result.returncode != 0 or not output.is_file():
+            output.unlink(missing_ok=True)
             raise DecryptError("makerom failed to build the CCI.")
         return output
     finally:
@@ -222,8 +228,10 @@ def decrypt_cia(rom: Path, output: Path, emit: Emit, *, to_cci: bool = False) ->
                 args += ["-i", f"{part.name}:{i}:{i}"]
         args += ["-ver", str(version)]
         emit("Rebuilding CIA...")
-        run_tool(work / "makerom.exe", args, cwd=work)
-        if not output.is_file():
+        output.unlink(missing_ok=True)
+        result = run_tool(work / "makerom.exe", args, cwd=work)
+        if result.returncode != 0 or not output.is_file():
+            output.unlink(missing_ok=True)
             raise DecryptError("makerom failed to build the CIA.")
 
         if to_cci and is_game:

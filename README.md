@@ -1,12 +1,12 @@
 <p align="center">
-<img src="docs/images/logo.png" alt="" width="112">
+<img src="docs/images/banner.png" alt="Ayn Thor Compression" width="100%">
 </p>
 
-<h1 align="center">Ayn Thor Compression</h1>
-
 <p align="center">
-<a href="https://github.com/asa07-salihg/Ayn-Thor-Compression/actions/workflows/ci.yml"><img src="https://github.com/asa07-salihg/Ayn-Thor-Compression/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
-<a href="https://github.com/asa07-salihg/Ayn-Thor-Compression/releases/latest"><img src="https://img.shields.io/github/v/release/asa07-salihg/Ayn-Thor-Compression" alt="Release"></a>
+<a href="https://github.com/asa07-salihg/Ayn-Thor-Compression/releases/latest"><img src="https://img.shields.io/github/v/release/asa07-salihg/Ayn-Thor-Compression?label=latest&logo=github&logoColor=white&color=EE5A24&labelColor=27303D&style=flat" alt="Release"></a>
+<a href="https://github.com/asa07-salihg/Ayn-Thor-Compression/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/asa07-salihg/Ayn-Thor-Compression/ci.yml?label=CI&logo=github&logoColor=white&labelColor=27303D&style=flat" alt="CI"></a>
+<a href="https://github.com/asa07-salihg/Ayn-Thor-Compression/releases"><img src="https://img.shields.io/github/downloads/asa07-salihg/Ayn-Thor-Compression/total?label=downloads&logo=github&logoColor=white&color=3ddc84&labelColor=27303D&style=flat" alt="Downloads"></a>
+<a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue?labelColor=27303D&style=flat" alt="License"></a>
 </p>
 
 <p align="center">
@@ -36,6 +36,7 @@ any of them under <strong>Settings &gt; Platform presets</strong>.
 
 <p align="center">
 <a href="#download">Download</a> ·
+<a href="#send-games-to-your-handheld-over-usb">USB</a> ·
 <a href="#supported-formats">Formats</a> ·
 <a href="#legal">Legal</a> ·
 <a href="#running-from-source">From source</a> ·
@@ -77,9 +78,12 @@ drive, so most PC tools can't write to it. This app can.
    notification on it.
 2. Click the destination at the bottom of the window and choose
    **Straight onto my handheld**. The SD card is picked for you if it already
-   has a `ROMs` folder.
+   has a `ROMs` folder. To pick the folder yourself, choose it in the folder
+   window. The handheld is listed under This PC even though it has no drive
+   letter.
 3. Press Start. Each game is converted on the PC first and then sent into the
-   folder for its console, so `psx` games land in `ROMs/psx`.
+   folder for its console, so `psx` games land in `ROMs/psx`. Cancel stops the
+   program that is running. It does not wait for that game to finish.
 
 A game that is already on the handheld is skipped. A file that is already in
 the right format, like a `.chd` or a `.rvz`, is sent as it is. A cue sheet
@@ -111,6 +115,7 @@ Get-FileHash .\AynThorCompression.exe -Algorithm SHA256
 ```
 
 The exe is not code-signed, so SmartScreen will warn on first run.
+Windows 10 or newer. Switch compression needs your own `prod.keys`.
 
 ## Supported formats
 
@@ -242,6 +247,13 @@ Python 3.10 or newer. The tests do not need Qt or a display:
 ```powershell
 pytest
 ruff check .
+```
+
+After you edit `logo.svg` or `logo-small.svg`, rebuild the icon and the README
+images:
+
+```powershell
+python scripts/make_icons.py
 ```
 
 ## Building the exe

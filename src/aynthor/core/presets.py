@@ -30,11 +30,12 @@ Folder names: `core.esde`.
 from __future__ import annotations
 
 import copy
+import re
 from collections.abc import Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from aynthor.core.esde import platform_from_path
+from aynthor.core.esde import FOLDER_TO_PLATFORM, platform_from_path
 from aynthor.core.formats import FORMAT_CATALOG, detect_format
 from aynthor.core.models import CompressionFormat
 
@@ -269,6 +270,30 @@ def _format_that_reverses(extension: str) -> CompressionFormat | None:
     return None
 
 
+def _unknown_folder_under_roms(path: Path) -> bool:
+    """A system folder the table does not know, sitting directly under ROMs.
+
+    Guessing a platform from the extension filed `ROMs/nes` as FBNeo and
+    `ROMs/xbox` as PS2. An unknown folder under ROMs has no platform.
+    """
+    parent = path.parent.name.casefold()
+    if not parent or parent in FOLDER_TO_PLATFORM:
+        return False
+    return path.parent.parent.name.casefold() in {"roms", "rom"}
+
+
+def _iso_words(path: Path) -> str:
+    """`Wii ISOs/Game.iso` is Wii. The folder name is not exactly `wii`."""
+    for part in path.parts:
+        lowered = part.casefold()
+        if re.search(r"\bwii\s*u\b", lowered):
+            return "wiiu"
+        for candidate in ("wii", "gc", "psp", "ps2"):
+            if re.search(rf"\b{candidate}\b", lowered):
+                return candidate
+    return ""
+
+
 def _platform_for_container(path: Path, extension: str) -> str:
     """The platform of a file whose extension names a container, not a system.
 
@@ -280,11 +305,11 @@ def _platform_for_container(path: Path, extension: str) -> str:
     if folder:
         return folder
     if extension == ".iso":
-        parts = [part.lower() for part in path.parts]
-        for candidate in ("wii", "gc", "psp", "ps2"):
-            if candidate in parts:
-                return candidate
-        return _ISO_FALLBACK
+        named = _iso_words(path)
+        if named:
+            return named
+    if _unknown_folder_under_roms(path):
+        return ""
     return EXT_TO_PLATFORM.get(extension, "")
 
 
@@ -299,6 +324,8 @@ def detect_platform_format(path: Path, presets: PresetTable | None = None) -> De
 
     if extension in _FOLDER_WINS:
         platform = _platform_for_container(path, extension)
+    elif _unknown_folder_under_roms(path):
+        platform = ""
     else:
         platform = EXT_TO_PLATFORM.get(extension, "")
 

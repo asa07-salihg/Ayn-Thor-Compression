@@ -28,6 +28,7 @@ from aynthor.core.device.fs import (
     DeviceFS,
     DeviceTarget,
     Progress,
+    SendCancelled,
 )
 from aynthor.core.sheets import tracks
 from aynthor.core.system import app_data_dir
@@ -66,26 +67,37 @@ class Plan:
     reason: str = ""
 
 
+def _fold(path: PurePosixPath) -> str:
+    """One spelling for a path. The device treats `Game.chd` and `game.chd`
+    as the same file, so the set of what this run sent has to as well."""
+    return str(path).replace("\\", "/").casefold()
+
+
+def _taken(sent: set, path: PurePosixPath) -> bool:
+    want = _fold(path)
+    return any(_fold(item) == want for item in sent)
+
+
 def plan(fs: DeviceFS, remote: PurePosixPath, policy: str,
-         sent: set[PurePosixPath]) -> Plan:
+         sent: set) -> Plan:
     """What to do about `remote`, given what is on the device and what this
     run has already sent there."""
     existing = fs.stat(remote)
-    if existing is None and remote not in sent:
+    if existing is None and not _taken(sent, remote):
         return Plan(remote)
     if existing is not None and existing.is_dir:
         raise DeviceError(
             f"There is a folder called {remote.name} on {fs.label} where the file should go.")
     if policy == "skip":
         return Plan(None, reason=f"Already on {fs.label}")
-    if policy == "overwrite" and remote not in sent:
+    if policy == "overwrite" and not _taken(sent, remote):
         return Plan(remote, replace=existing is not None)
     # Rename, or an overwrite that would land on something this run wrote a
     # moment ago, which is another game, not an old copy of this one.
     counter = 1
     while True:
         candidate = remote.with_name(f"{remote.stem}_{counter}{remote.suffix}")
-        if candidate not in sent and fs.stat(candidate) is None:
+        if not _taken(sent, candidate) and fs.stat(candidate) is None:
             return Plan(candidate)
         counter += 1
 
@@ -97,6 +109,11 @@ def send(fs: DeviceFS, local: Path, decided: Plan,
     remote = decided.remote
     if remote is None:
         raise ValueError("send() called for a job the plan left out")
+    # Before any folder is created or any old copy removed. Stop during the
+    # conversion used to reach here afterwards and delete the game on the
+    # device, then send nothing.
+    if cancelled is not None and cancelled():
+        raise SendCancelled("Stopped before the file was sent.")
     size = local.stat().st_size
     freed = 0
     if decided.replace:
@@ -120,7 +137,8 @@ def send(fs: DeviceFS, local: Path, decided: Plan,
 
 def send_disc(fs: DeviceFS, sheet: Path, tracks: list[PurePosixPath], decided: Plan,
               on_progress: Progress | None = None,
-              cancelled: Cancelled | None = None) -> PurePosixPath:
+              cancelled: Cancelled | None = None,
+              sent: set | None = None) -> PurePosixPath:
     """A cue sheet or GDI and the tracks it lists, which go in the same folder
     under their own names because that is what the sheet says.
 
@@ -131,7 +149,27 @@ def send_disc(fs: DeviceFS, sheet: Path, tracks: list[PurePosixPath], decided: P
     remote = decided.remote
     if remote is None:
         raise ValueError("send_disc() called for a job the plan left out")
-    parts = [(sheet.parent.joinpath(*t.parts), remote.parent / t) for t in tracks]
+    if cancelled is not None and cancelled():
+        raise SendCancelled("Stopped before the file was sent.")
+    claimed = sent if sent is not None else set()
+    parts = [(sheet.parent.joinpath(*track.parts), remote.parent / track) for track in tracks]
+    # A cue names its tracks. Two discs that both say track01.bin cannot share
+    # one folder: replacing the track keeps the cue and loses the other disc.
+    # Refuse before anything is deleted.
+    for _local, there in parts:
+        if _taken(claimed, there):
+            raise DeviceError(
+                f"{there.name} is already used by another disc in this run. "
+                "Put each disc in its own folder.")
+        existing = fs.stat(there)
+        if existing is not None and existing.is_dir:
+            raise DeviceError(
+                f"There is a folder called {there.name} on {fs.label} "
+                "where the track should go.")
+        if existing is not None and not decided.replace:
+            raise DeviceError(
+                f"{there.name} is already on {fs.label}. "
+                "Put each disc in its own folder.")
     sizes = [local.stat().st_size for local, _ in parts]
     total = sum(sizes) + sheet.stat().st_size
     freed = 0
@@ -153,9 +191,50 @@ def send_disc(fs: DeviceFS, sheet: Path, tracks: list[PurePosixPath], decided: P
         return lambda pct: on_progress(min(100, (start + size * pct // 100) * 100 // total))
 
     for (local, there), size in zip(parts, sizes, strict=True):
-        send(fs, local, Plan(there, replace=True, reason=""), scaled(size), cancelled)
+        send(fs, local, Plan(there, replace=decided.replace), scaled(size), cancelled)
         done += size
     return send(fs, sheet, decided, scaled(total - done), cancelled)
+
+
+def send_tree(fs: DeviceFS, folder: Path, remote: PurePosixPath, decided: Plan,
+              on_progress: Progress | None = None,
+              cancelled: Cancelled | None = None,
+              sent: set | None = None) -> list[PurePosixPath]:
+    """Send every file inside an unpacked folder. The folder itself is not a file."""
+    if cancelled is not None and cancelled():
+        raise SendCancelled("Stopped before the file was sent.")
+    files = sorted(path for path in folder.rglob("*") if path.is_file())
+    if not files:
+        raise DeviceError(f"{folder.name} unpacked to an empty folder.")
+    claimed = sent if sent is not None else set()
+    targets: list[tuple[Path, PurePosixPath]] = []
+    for path in files:
+        relative = PurePosixPath(*path.relative_to(folder).parts)
+        there = remote / relative
+        if _taken(claimed, there):
+            raise DeviceError(
+                f"{there.name} is already used by another game in this run.")
+        targets.append((path, there))
+    total = sum(path.stat().st_size for path, _there in targets)
+    free = fs.free_space()
+    if total + HEADROOM > free:
+        raise DeviceError(
+            f"{folder.name} needs {_gb(total)} and {fs.label} has {_gb(free)} left.")
+    done = 0
+    sent_paths: list[PurePosixPath] = []
+    for path, there in targets:
+        if cancelled is not None and cancelled():
+            raise SendCancelled("Stopped before the file was sent.")
+
+        def scaled(pct: int, start: int = done, size: int = path.stat().st_size) -> None:
+            if on_progress is not None and total:
+                on_progress(min(100, (start + size * pct // 100) * 100 // total))
+
+        send(fs, path, Plan(there, replace=decided.replace),
+             scaled if on_progress is not None else None, cancelled)
+        done += path.stat().st_size
+        sent_paths.append(there)
+    return sent_paths
 
 
 def _gb(size: int) -> str:

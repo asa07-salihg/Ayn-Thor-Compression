@@ -62,6 +62,17 @@ def test_overwrite_never_lands_on_what_this_run_just_sent(tmp_path):
     assert not decided.replace
 
 
+def test_a_stop_before_the_copy_does_not_remove_the_old_file(tmp_path):
+    from aynthor.core.device import SendCancelled
+
+    fs = MemoryFS("AYN Thor")
+    fs.write(P("psx/Game.chd"), b"old")
+    decided = deliver.plan(fs, P("psx/Game.chd"), "overwrite", set())
+    with pytest.raises(SendCancelled):
+        deliver.send(fs, _local(tmp_path), decided, cancelled=lambda: True)
+    assert fs.read(P("psx/Game.chd")) == b"old"
+
+
 def test_a_full_device_is_refused_before_anything_moves(tmp_path):
     fs = MemoryFS("AYN Thor", capacity=deliver.HEADROOM + 500)
     decided = deliver.plan(fs, P("psx/Game.chd"), "skip", set())

@@ -28,6 +28,7 @@ from __future__ import annotations
 import os
 import re
 import shutil
+import stat
 import tempfile
 import zipfile
 from collections.abc import Callable, Iterable, Iterator
@@ -38,6 +39,17 @@ from pathlib import Path, PurePosixPath
 from aynthor.core.converters.base import missing_tool, parse_progress
 from aynthor.core.formats import known_extensions
 from aynthor.core.system import run_tool, tool_path
+
+
+def _remove_tree(path: Path) -> None:
+    """Delete a scratch folder, including files 7-Zip restored as read-only."""
+
+    def _writable(_func, name, _exc) -> None:
+        with suppress(OSError):
+            os.chmod(name, stat.S_IWRITE)
+            _func(name)
+
+    shutil.rmtree(path, onerror=_writable)
 
 ARCHIVE_EXTENSIONS = frozenset({".zip", ".7z", ".rar"})
 
@@ -223,7 +235,7 @@ class ArchiveScratch:
         try:
             self._listed = extract_all(archive, self.root, on_progress)
         except BaseException:
-            shutil.rmtree(self.root, ignore_errors=True)
+            _remove_tree(self.root)
             raise
 
     def path_for(self, member: str) -> Path:
@@ -248,7 +260,7 @@ class ArchiveScratch:
         )
 
     def close(self) -> None:
-        shutil.rmtree(self.root, ignore_errors=True)
+        _remove_tree(self.root)
 
 
 @contextmanager
@@ -365,7 +377,7 @@ def extract_member_to(
         if on_progress:
             on_progress(100)
     finally:
-        shutil.rmtree(staging, ignore_errors=True)
+        _remove_tree(staging)
 
 
 _TITLE_ID_IN_NAME = re.compile(r"\[([0-9A-Fa-f]{16})\]")
@@ -474,7 +486,10 @@ def _extract_zip_member(
                     f"{wanted}; cannot tell which one {member} is.")
         if info is None:
             raise UnpackError(f"{member} is not in {archive.name}.")
-        opened.extract(info, into)
+        try:
+            opened.extract(info, into)
+        except NotImplementedError:
+            _extract_7z(archive, into, on_progress, member=member)
     if on_progress:
         on_progress(100 if size else 99)
 
@@ -543,17 +558,21 @@ def _extract_zip(archive: Path, into: Path, total: int,
                  on_progress: Callable[[int], None] | None) -> None:
     done = 0
     last = -1
-    with zipfile.ZipFile(archive) as opened:
-        for info in opened.infolist():
-            if info.is_dir():
-                continue
-            opened.extract(info, into)
-            done += info.file_size
-            if on_progress and total:
-                pct = min(99, int(done * 100 / total))
-                if pct != last:
-                    last = pct
-                    on_progress(pct)
+    try:
+        with zipfile.ZipFile(archive) as opened:
+            for info in opened.infolist():
+                if info.is_dir():
+                    continue
+                opened.extract(info, into)
+                done += info.file_size
+                if on_progress and total:
+                    pct = min(99, int(done * 100 / total))
+                    if pct != last:
+                        last = pct
+                        on_progress(pct)
+    except NotImplementedError:
+        # Deflate64, which Windows uses for zips over about 2 GB.
+        _extract_7z(archive, into, on_progress)
 
 
 # ------------------------------------------------------------------------- 7z
@@ -562,7 +581,7 @@ def _list_7z(archive: Path, tool: Path | None = None) -> list[Member]:
     seven = tool if tool is not None else tool_path("7za")
     if not seven.is_file():
         raise UnpackError(missing_tool("7-Zip (7za)", seven.parent))
-    result = run_tool(seven, ["l", "-slt", "-ba", "-scsUTF-8", str(archive)])
+    result = run_tool(seven, ["l", "-slt", "-ba", "-sccUTF-8", str(archive)])
     if result.returncode > 1:
         raise UnpackError((result.stderr or result.stdout or "7za failed").strip())
     return _parse_7z_listing(result.stdout)
@@ -615,7 +634,7 @@ def _extract_7z(
         if on_progress is not None and (pct := parse_progress(line)) is not None:
             on_progress(min(99, pct))
 
-    args = ["x", str(archive), f"-o{into}", "-y", "-bsp1", "-scsUTF-8"]
+    args = ["x", str(archive), f"-o{into}", "-y", "-bsp1", "-sccUTF-8"]
     if recursive:
         args.append("-r")
     if member:

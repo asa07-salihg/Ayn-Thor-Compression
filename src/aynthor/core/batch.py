@@ -36,6 +36,7 @@ from aynthor.core.device.fs import DeviceError, DeviceFS, SendCancelled
 from aynthor.core.jobs import resolve_output_path
 from aynthor.core.models import CompressionFormat, ConversionJob, ConversionMode
 from aynthor.core.sheets import disc_size, is_sheet, missing_track, relative_tracks, tracks
+from aynthor.core.system import clear_tool_stop, stop_running_tool
 from aynthor.core.unpack import ArchiveScratch, UnpackError, extract_member_to, unpacked
 
 # Some filesystems record whole seconds, and a fast conversion can finish
@@ -111,12 +112,14 @@ class Batch:
 
     def cancel(self) -> None:
         self._cancelled = True
+        stop_running_tool()
 
     @property
     def cancelled(self) -> bool:
         return self._cancelled
 
     def run(self) -> None:
+        clear_tool_stop()
         total = len(self.jobs)
         self._pending_members = Counter(job.input_path for _, job in self.jobs if job.member)
         try:
@@ -156,6 +159,11 @@ class Batch:
         output = resolve_output_path(job.output_path, self.policy, self._claimed)
         if output is None:
             return Outcome.SKIPPED, f"{job.output_path.name} is already there."
+        # Overwrite means replace the file that is already there. chdman
+        # refuses that unless -f is passed, and the CHD panel's own box is
+        # a separate switch that is off unless the user ticks it.
+        if self.policy == "overwrite" and output.exists():
+            job.options["force"] = True
         job.output_path = output
         self._claimed.add(output)
 
@@ -191,6 +199,12 @@ class Batch:
             if deliver.can_reuse(staged, made_from):
                 self.events.log(f"Using {staged.name}, converted on the last run.")
             else:
+                room = self._no_room(fs, job)
+                if room:
+                    return Outcome.FAILED, room
+                # A half-written CHD from a killed run makes the next Start
+                # fail once with "file already exists" and only then gets deleted.
+                deliver.clear(staged)
                 ok, message = self.execute(row, job)
                 if not ok:
                     deliver.clear(staged)
@@ -204,11 +218,30 @@ class Batch:
         self.events.stage(row, f"Sending to {fs.label}")
         self.events.progress(row, 0)
         try:
+            if self._cancelled:
+                kept = self._kept(local, staged)
+                return Outcome.FAILED, "Stopped." if not kept else f"Stopped. {kept}"
+            if local.is_dir():
+                paths = deliver.send_tree(
+                    fs, local, decided.remote, decided,
+                    on_progress=lambda pct: self.events.progress(row, pct),
+                    cancelled=lambda: self._cancelled,
+                    sent=self._sent)
+                remote = decided.remote
+                for path in paths:
+                    self._sent.add(path)
+                self._settle(job, failed=False)
+                job.output_size = size
+                message = f"Sent to {fs.label}."
+                if job.options.get("delete_source") and self._delete_after_send(job):
+                    message = f"{message} Source deleted."
+                return Outcome.DONE, message
             if listed:
                 remote = deliver.send_disc(
                     fs, local, listed, decided,
                     on_progress=lambda pct: self.events.progress(row, pct),
-                    cancelled=lambda: self._cancelled)
+                    cancelled=lambda: self._cancelled,
+                    sent=self._sent)
             else:
                 remote = deliver.send(
                     fs, local, decided,
@@ -220,6 +253,8 @@ class Batch:
             self._device.drop()
             return Outcome.FAILED, f"{exc} " + self._kept(local, staged)
         self._sent.add(remote)
+        for track in listed:
+            self._sent.add(remote.parent / track)
         self._settle(job, failed=False)
         job.output_size = size
         if local == staged:
@@ -230,6 +265,24 @@ class Batch:
         if job.options.get("delete_source") and self._delete_after_send(job):
             message = f"{message} Source deleted."
         return Outcome.DONE, message
+
+    def _no_room(self, fs: DeviceFS, job: ConversionJob) -> str:
+        """Refuse before converting when the device cannot hold this file."""
+        try:
+            free = fs.free_space()
+        except DeviceError as exc:
+            return str(exc)
+        estimate = job.input_size
+        if estimate <= 0 and job.input_path.is_file():
+            try:
+                estimate = job.input_path.stat().st_size
+            except OSError:
+                estimate = 0
+        if free < deliver.HEADROOM or estimate + deliver.HEADROOM > free:
+            return (
+                f"{job.input_path.name} needs about {max(estimate, 1) // (1024 * 1024)} MB "
+                f"and {fs.label} has {free // (1024 * 1024)} MB left.")
+        return ""
 
     @staticmethod
     def _kept(local: Path, staged: Path) -> str:
@@ -341,7 +394,8 @@ class Batch:
         """Whether this job only needs the file in its folder (no convert)."""
         if job.options.get("mode") == ConversionMode.MOVE.value:
             return True
-        if job.format is CompressionFormat.NDS_TRIM or is_decompress(job):
+        if job.format in (CompressionFormat.NDS_TRIM, CompressionFormat.DEC_3DS) or is_decompress(
+                job):
             return False
         source = Path(job.member) if job.member else job.input_path
         return source.suffix.lower() == job.output_path.suffix.lower()
@@ -351,7 +405,8 @@ class Batch:
         """Already the target container, or the user chose Move / archive Unzip."""
         if job.options.get("mode") == ConversionMode.MOVE.value:
             return True
-        if job.format is CompressionFormat.NDS_TRIM or is_decompress(job):
+        if job.format in (CompressionFormat.NDS_TRIM, CompressionFormat.DEC_3DS) or is_decompress(
+                job):
             return False
         return job.input_path.suffix.lower() == job.output_path.suffix.lower()
 
