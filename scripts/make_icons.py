@@ -118,7 +118,7 @@ def compose_card(
     subtitle_px: int,
 ):
     """Logo on the left, title and subtitle on the right, on the dark background."""
-    from PySide6.QtCore import QRectF, QPointF
+    from PySide6.QtCore import QPointF, QRectF
     from PySide6.QtGui import (
         QFont,
         QImage,
